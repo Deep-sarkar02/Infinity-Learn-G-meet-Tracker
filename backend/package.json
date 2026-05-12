@@ -13,6 +13,8 @@
     "seed:test:data": "node scripts/seedRosterAndTeachers.js",
     "gupshup:test": "node scripts/sendGupshupWhatsAppTest.js",
     "gupshup:test:all": "node scripts/sendGupshupWhatsAppTestSuite.js",
+    "env:google-service-account-json": "node scripts/printGoogleServiceAccountEnv.js",
+    "env:patch-google-into-dotenv": "node scripts/patchEnvGoogleJson.js",
     "lsq:sync:booking": "node scripts/syncLsqArtifacts.js",
     "lsq:createcustom:test": "node scripts/sendLsqCreateCustomTest.js",
     "lint": "node -e \"console.log('No lint configured yet')\"",
