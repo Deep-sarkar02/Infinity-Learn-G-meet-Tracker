@@ -1,0 +1,19 @@
+# Root workspace ignores
+node_modules/
+dist/
+coverage/
+
+# Env / secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Cursor / Postman (local tooling & collections — not part of the app)
+.cursor/
+.postman/
+postman/

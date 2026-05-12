@@ -1,0 +1,98 @@
+# Single stack file — pick how you run Postgres:
+#
+# A) Local / CI with Postgres in Docker (bundled DB)
+#    1) Copy backend/docker-test.env.example → backend/.env.docker (includes DATABASE_URL for service `postgres`).
+#    2) docker compose --profile bundled-db up -d --build
+#
+# B) Hosted Postgres only (Neon, RDS, etc.) — no Postgres container
+#    Put DATABASE_URL (+ JWT_SECRET, etc.) in backend/.env.production (or repo-root .env).
+#    Recommended for production DB:
+#      SKIP_PRISMA_PUSH=1 docker compose up -d --build
+#    (Use prisma migrate deploy in CI instead of db push on container start.)
+#
+# Open http://localhost:${FRONTEND_PORT:-5176}
+# Optional bundled Postgres host port: POSTGRES_HOST_PORT (default 5433).
+
+name: il-gmeet-tracker
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["bundled-db"]
+    environment:
+      POSTGRES_DB: meeting_reservation
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - il_gmeet_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d meeting_reservation"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: il-gmeet-backend:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    environment:
+      NODE_ENV: production
+    env_file:
+      - path: ./backend/.env.docker
+        required: false
+      - path: ./backend/.env.production
+        required: false
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$${SKIP_PRISMA_PUSH:-}" = "1" ]; then
+          exec node src/server.js
+        else
+          npx prisma db push && exec node src/server.js
+        fi
+    expose:
+      - "5000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+    image: il-gmeet-frontend:latest
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-5176}:80"
+    restart: unless-stopped
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  il_gmeet_pgdata:

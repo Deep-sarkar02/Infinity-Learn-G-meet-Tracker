@@ -1,0 +1,51 @@
+{
+  "name": "infinity-learn-g-meet-tracker",
+  "version": "1.0.0",
+  "description": "Teacher-Student Meeting Reservation backend",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "db:prisma:generate": "prisma generate",
+    "db:prisma:validate": "prisma validate",
+    "db:prisma:push": "prisma db push",
+    "seed:admin": "node scripts/seedAdmin.js",
+    "seed:test:data": "node scripts/seedRosterAndTeachers.js",
+    "gupshup:test": "node scripts/sendGupshupWhatsAppTest.js",
+    "gupshup:test:all": "node scripts/sendGupshupWhatsAppTestSuite.js",
+    "lsq:sync:booking": "node scripts/syncLsqArtifacts.js",
+    "lsq:createcustom:test": "node scripts/sendLsqCreateCustomTest.js",
+    "lint": "node -e \"console.log('No lint configured yet')\"",
+    "test": "node -e \"console.log('No tests configured yet')\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Deep-sarkar02/Infinity-Learn-G-meet-Tracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Deep-sarkar02/Infinity-Learn-G-meet-Tracker/issues"
+  },
+  "homepage": "https://github.com/Deep-sarkar02/Infinity-Learn-G-meet-Tracker#readme",
+  "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "googleapis": "^171.4.0",
+    "helmet": "^8.1.0",
+    "joi": "^18.1.2",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "nodemailer": "^8.0.5",
+    "pg": "^8.20.0",
+    "prisma": "^6.16.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

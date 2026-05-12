@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  teacher
+  student
+}
+
+enum BookingStatus {
+  scheduled
+  cancelled
+  completed
+  student_did_not_join
+  teacher_did_not_join
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  legacyMongoId String?  @unique @db.VarChar(24)
+  name          String   @db.VarChar(120)
+  email         String   @unique @db.VarChar(255)
+  passwordHash  String   @map("password_hash")
+  role          UserRole
+  grade         String?  @db.VarChar(8)
+  display       String?  @db.VarChar(120)
+  batchId       String?  @map("batch_id") @db.VarChar(120)
+  batchName     String?  @map("batch_name") @db.VarChar(160)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  teacherAvailabilities Availability[] @relation("TeacherAvailabilities")
+  teacherBookings       Booking[]      @relation("TeacherBookings")
+  studentBookings       Booking[]      @relation("StudentBookings")
+
+  @@map("users")
+  @@index([role], map: "idx_users_role")
+  @@index([role, grade, display, batchId, batchName], map: "idx_users_teacher_routing")
+}
+
+model AppSetting {
+  key               String   @id @db.VarChar(80)
+  bookingWindowDays Int      @map("booking_window_days")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
+model RosterStudent {
+  id            String   @id @default(uuid()) @db.Uuid
+  legacyMongoId String?  @unique @db.VarChar(24)
+  userId        String   @map("user_id") @db.VarChar(120)
+  name          String   @db.VarChar(120)
+  nameLower     String   @map("name_lower") @db.VarChar(160)
+  mobile        String   @db.VarChar(24)
+  grade         String   @db.VarChar(8)
+  display       String   @db.VarChar(120)
+  batchId       String   @map("batch_id") @db.VarChar(120)
+  batchName     String   @map("batch_name") @db.VarChar(160)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  bookings Booking[]
+
+  @@map("roster_students")
+  @@unique([mobile, nameLower], map: "ux_roster_mobile_name_lower")
+  @@index([grade, display, batchId, batchName], map: "idx_roster_routing")
+}
+
+model Availability {
+  id            String   @id @default(uuid()) @db.Uuid
+  legacyMongoId String?  @unique @db.VarChar(24)
+  teacherId     String   @map("teacher_id") @db.Uuid
+  dateYmd       DateTime @map("date_ymd") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  teacher  User               @relation("TeacherAvailabilities", fields: [teacherId], references: [id], onDelete: Cascade)
+  slots    AvailabilitySlot[]
+  bookings Booking[]
+
+  @@map("availabilities")
+  @@unique([teacherId, dateYmd], map: "ux_availability_teacher_date")
+  @@index([teacherId], map: "idx_availability_teacher")
+  @@index([dateYmd], map: "idx_availability_date")
+}
+
+model AvailabilitySlot {
+  id             String   @id @default(uuid()) @db.Uuid
+  legacyMongoId  String?  @unique @db.VarChar(24)
+  availabilityId String   @map("availability_id") @db.Uuid
+  startTime      DateTime @map("start_time")
+  endTime        DateTime @map("end_time")
+  isBooked       Boolean  @default(false) @map("is_booked")
+  bookingId      String?  @unique @map("booking_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  availability Availability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+  booking      Booking?     @relation("SlotBooking", fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@map("availability_slots")
+  @@unique([availabilityId, startTime, endTime], map: "ux_slot_time_per_availability")
+  @@index([availabilityId], map: "idx_slot_availability")
+  @@index([isBooked], map: "idx_slot_booked")
+}
+
+model Booking {
+  id                    String        @id @default(uuid()) @db.Uuid
+  legacyMongoId         String?       @unique @db.VarChar(24)
+  studentId             String?       @map("student_id") @db.Uuid
+  rosterStudentId       String?       @map("roster_student_id") @db.Uuid
+  teacherId             String        @map("teacher_id") @db.Uuid
+  availabilityId        String?       @map("availability_id") @db.Uuid
+  slotId                String?       @map("slot_id") @db.Uuid
+  date                  DateTime      @db.Date
+  startTime             DateTime      @map("start_time")
+  endTime               DateTime      @map("end_time")
+  meetingLink           String?       @map("meeting_link")
+  recordingUrl          String?       @map("recording_url")
+  transcriptUrl         String?       @map("transcript_url")
+  artifactsLastSyncedAt DateTime?     @map("artifacts_last_synced_at")
+  artifactsFetchAttempts Int          @default(0) @map("artifacts_fetch_attempts")
+  artifactsLastError    String?       @map("artifacts_last_error")
+  googleCalendarEventId String?       @map("google_calendar_event_id")
+  contactEmail          String?       @map("contact_email")
+  status                BookingStatus @default(scheduled)
+  rescheduledAt         DateTime?     @map("rescheduled_at")
+  cancellationReason    String?       @map("cancellation_reason")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  student       User?            @relation("StudentBookings", fields: [studentId], references: [id], onDelete: SetNull)
+  rosterStudent RosterStudent?   @relation(fields: [rosterStudentId], references: [id], onDelete: SetNull)
+  teacher       User             @relation("TeacherBookings", fields: [teacherId], references: [id], onDelete: Restrict)
+  availability  Availability?    @relation(fields: [availabilityId], references: [id], onDelete: SetNull)
+  slotLink      AvailabilitySlot? @relation("SlotBooking")
+
+  @@map("bookings")
+  @@index([teacherId, startTime], map: "idx_booking_teacher_start")
+  @@index([status], map: "idx_booking_status")
+  @@index([date], map: "idx_booking_date")
+  @@index([rosterStudentId, date], map: "idx_booking_roster_student_date")
+}
