@@ -10,7 +10,8 @@ COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY . .
-RUN npx prisma generate
+RUN npx prisma generate \
+    && chown -R node:node /app
 
 EXPOSE 5000
 
