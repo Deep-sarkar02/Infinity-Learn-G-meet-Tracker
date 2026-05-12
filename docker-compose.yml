@@ -12,6 +12,7 @@
 #
 # Open http://localhost:${FRONTEND_PORT:-5176}
 # Optional bundled Postgres host port: POSTGRES_HOST_PORT (default 5433).
+# Env files listed under backend env_file: if a value contains "$", escape as "$$" for Docker Compose (e.g. LeadSquared keys like u$…).
 
 name: il-gmeet-tracker
 
