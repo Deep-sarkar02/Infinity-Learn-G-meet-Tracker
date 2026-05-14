@@ -88,6 +88,11 @@ router.get(
   asyncHandler(adminController.listBookings),
 );
 
+router.get(
+  "/lsq-artifacts-sync-telemetry",
+  asyncHandler(adminController.getLsqArtifactsSyncTelemetryHandler),
+);
+
 router.patch(
   "/bookings/:bookingId/media",
   validate(updateBookingMediaParamsSchema, "params"),

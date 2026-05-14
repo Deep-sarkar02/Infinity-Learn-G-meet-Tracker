@@ -1,7 +1,10 @@
 const ApiError = require("../../utils/ApiError");
 const env = require("../../config/env");
 const logger = require("../../config/logger");
-const { sendTeacherCredentials } = require("../notifications/email.service");
+const {
+  sendTeacherCredentials,
+  isTeacherCredentialEmailConfigured,
+} = require("../notifications/email.service");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const getPrisma = require("../../config/postgres");
@@ -9,12 +12,8 @@ const { idOrLegacyWhere } = require("../../utils/id");
 
 const SETTINGS_KEY = "BOOKING_WINDOW";
 
-const isSmtpConfigured = () =>
-  Boolean(
-    String(env.smtp.host || "").trim() &&
-      String(env.smtp.user || "").trim() &&
-      String(env.smtp.pass || "").trim(),
-  );
+/** API field name kept for compatibility — means SES teacher-mail env is ready. */
+const isSmtpConfigured = () => isTeacherCredentialEmailConfigured();
 
 const generateTempPassword = (length = 12) => {
   const raw = crypto

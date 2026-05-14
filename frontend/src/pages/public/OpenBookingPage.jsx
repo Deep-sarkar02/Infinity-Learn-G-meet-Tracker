@@ -274,9 +274,9 @@ export const OpenBookingPage = () => {
         slotId: teacher.slotId,
         contactEmail: contactEmail.trim(),
       });
-      console.warn(
-        "[Infinity Learn] Open booking API succeeded — LeadSquared section follows (same response as WhatsApp).",
-      );
+      // console.warn(
+      //   "[Infinity Learn] Open booking API succeeded — LeadSquared section follows (same response as WhatsApp).",
+      // );
       logParentWhatsAppFromApi(data);
       logLsqProspectActivityFromApi(data);
       await loadSlots(roster.id, selectedDate);

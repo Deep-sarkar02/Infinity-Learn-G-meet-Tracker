@@ -21,4 +21,6 @@ export const adminService = {
     apiClient.patch(`/admin/bookings/${bookingId}/media`, payload),
   getBookingDashboardStats: (params) => apiClient.get("/admin/bookings/dashboard-stats", { params }),
   getBookingWeekdayStats: (params) => apiClient.get("/admin/bookings/weekday-stats", { params }),
+  /** Last LSQ artifact poller batch (admin debug; browser console logs this). */
+  getLsqArtifactsSyncTelemetry: () => apiClient.get("/admin/lsq-artifacts-sync-telemetry"),
 };

@@ -87,5 +87,5 @@ This repository now includes Prisma schema + migration scripts for MongoDB -> Po
 - All booking times are stored in UTC.
 - Double booking is prevented with atomic `findOneAndUpdate` slot reservation.
 - Booking window is configurable by admin.
-- Google Meet and SMTP gracefully fallback when not configured.
+- Google Meet and SES email gracefully skip when not configured.
 - Internal implementation remains domain-oriented while exposed structure is MVC-aligned.

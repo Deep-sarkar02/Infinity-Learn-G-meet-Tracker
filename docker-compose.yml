@@ -1,56 +1,30 @@
-# Single stack file — pick how you run Postgres:
+# Docker Compose — hosted Postgres only (Neon, RDS, etc.)
 #
-# A) Local / CI with Postgres in Docker (bundled DB)
-#    1) Copy backend/docker-test.env.example → backend/.env.docker (includes DATABASE_URL for service `postgres`).
-#    2) docker compose --profile bundled-db up -d --build
-#
-# B) Hosted Postgres only (Neon, RDS, etc.) — no Postgres container
-#    Put DATABASE_URL (+ JWT_SECRET, etc.) in backend/.env.production (or repo-root .env).
+# 1) Set DATABASE_URL (and secrets) in backend/.env and/or backend/.env.production.
+#    env_file merge order (later overrides earlier): .env.docker → .env → .env.production (all optional).
+# 2) From repo root:
+#      docker compose up -d --build
 #    Recommended for production DB:
 #      SKIP_PRISMA_PUSH=1 docker compose up -d --build
 #    (Use prisma migrate deploy in CI instead of db push on container start.)
 #
 # Open http://localhost:${FRONTEND_PORT:-5176}
-# Optional bundled Postgres host port: POSTGRES_HOST_PORT (default 5433).
-# Env files listed under backend env_file: if a value contains "$", escape as "$$" for Docker Compose (e.g. LeadSquared keys like u$…).
+# Env files: if a value contains "$", escape as "$$" for Docker Compose (e.g. LeadSquared keys like u$…).
 
 name: il-gmeet-tracker
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    profiles: ["bundled-db"]
-    environment:
-      POSTGRES_DB: meeting_reservation
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
-    volumes:
-      - il_gmeet_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d meeting_reservation"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    restart: unless-stopped
-    networks:
-      - appnet
-
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     image: il-gmeet-backend:latest
-    depends_on:
-      postgres:
-        condition: service_healthy
-        required: false
     environment:
       NODE_ENV: production
     env_file:
       - path: ./backend/.env.docker
+        required: false
+      - path: ./backend/.env
         required: false
       - path: ./backend/.env.production
         required: false
@@ -94,6 +68,3 @@ services:
 networks:
   appnet:
     driver: bridge
-
-volumes:
-  il_gmeet_pgdata:

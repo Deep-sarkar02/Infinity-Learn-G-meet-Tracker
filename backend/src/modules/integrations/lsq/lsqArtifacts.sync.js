@@ -197,9 +197,11 @@ const parseArtifacts = (payload) => {
   return { recordingUrl, transcriptUrl };
 };
 
-const shouldUseMeetingLink = (meetingLink) =>
-  typeof meetingLink === "string" &&
-  /^https:\/\/meet\.google\.com\/[a-z0-9-]+$/i.test(meetingLink.trim());
+const shouldUseMeetingLink = (meetingLink) => {
+  if (typeof meetingLink !== "string") return false;
+  const base = meetingLink.trim().split("?")[0].split("#")[0].trim();
+  return /^https:\/\/meet\.google\.com\/[a-z0-9-]+$/i.test(base);
+};
 
 const fetchLsqArtifacts = async (meetingLink) => {
   const url = new URL("/api/v1/lsq/gmeet-artifacts", env.lsq.baseUrl);
@@ -297,6 +299,35 @@ const syncOneBooking = async (booking) => {
 
 let running = false;
 
+/** Last completed LSQ artifact poll (for admin debug + browser console via API). */
+let lastLsqArtifactsSyncTelemetry = {
+  updatedAt: null,
+  bookingIds: [],
+  processedCount: 0,
+  status: "never",
+  lastError: null,
+  funnelCounts: null,
+};
+
+const setLsqArtifactsSyncTelemetry = (patch) => {
+  lastLsqArtifactsSyncTelemetry = {
+    ...lastLsqArtifactsSyncTelemetry,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+const getLsqArtifactsSyncTelemetry = () => ({
+  syncEnabled: env.lsq.syncEnabled,
+  hasDatabase: Boolean(prisma),
+  pollMs: env.lsq.pollMs,
+  delayAfterMeetingMinutes: env.lsq.delayAfterMeetingMinutes,
+  retryEveryMinutes: env.lsq.retryEveryMinutes,
+  maxPerRun: env.lsq.maxPerRun,
+  artifactsUnavailableAfterHours: env.lsq.artifactsUnavailableAfterHours,
+  ...lastLsqArtifactsSyncTelemetry,
+});
+
 const syncDueBookings = async () => {
   if (!env.lsq.syncEnabled) return;
   if (!prisma) return;
@@ -306,23 +337,38 @@ const syncDueBookings = async () => {
     const now = new Date();
     const dueBefore = new Date(now.getTime() - env.lsq.delayAfterMeetingMinutes * 60000);
     const retryBefore = new Date(now.getTime() - env.lsq.retryEveryMinutes * 60000);
+    const terminalMsg = getArtifactsNotAvailableMessage();
+
+    /** SQL `NOT (col = x)` drops NULL rows; require explicit NULL / empty / not-terminal. */
+    const whereEligible = {
+      endTime: { lte: dueBefore },
+      OR: [
+        { recordingUrl: null },
+        { recordingUrl: "" },
+        { transcriptUrl: null },
+        { transcriptUrl: "" },
+      ],
+      AND: [
+        { meetingLink: { not: null } },
+        { meetingLink: { not: "" } },
+        {
+          OR: [
+            { artifactsLastError: null },
+            { artifactsLastError: "" },
+            { NOT: { artifactsLastError: terminalMsg } },
+          ],
+        },
+        {
+          OR: [
+            { artifactsLastSyncedAt: null },
+            { artifactsLastSyncedAt: { lte: retryBefore } },
+          ],
+        },
+      ],
+    };
 
     const due = await prisma.booking.findMany({
-      where: {
-        endTime: { lte: dueBefore },
-        status: { in: ["scheduled", "completed"] },
-        meetingLink: { not: null },
-        OR: [{ recordingUrl: null }, { transcriptUrl: null }],
-        NOT: { artifactsLastError: getArtifactsNotAvailableMessage() },
-        AND: [
-          {
-            OR: [
-              { artifactsLastSyncedAt: null },
-              { artifactsLastSyncedAt: { lte: retryBefore } },
-            ],
-          },
-        ],
-      },
+      where: whereEligible,
       select: {
         id: true,
         meetingLink: true,
@@ -334,16 +380,91 @@ const syncDueBookings = async () => {
       take: Math.max(1, env.lsq.maxPerRun),
     });
 
-    if (!due.length) return;
+    if (!due.length) {
+      const pastEnd = { endTime: { lte: dueBefore } };
+      const linkOk = {
+        AND: [
+          { meetingLink: { not: null } },
+          { meetingLink: { not: "" } },
+        ],
+      };
+      const needMedia = {
+        OR: [
+          { recordingUrl: null },
+          { recordingUrl: "" },
+          { transcriptUrl: null },
+          { transcriptUrl: "" },
+        ],
+      };
+      const notTerminal = {
+        OR: [
+          { artifactsLastError: null },
+          { artifactsLastError: "" },
+          { NOT: { artifactsLastError: terminalMsg } },
+        ],
+      };
+      const retryOk = {
+        OR: [
+          { artifactsLastSyncedAt: null },
+          { artifactsLastSyncedAt: { lte: retryBefore } },
+        ],
+      };
 
+      const [
+        pastScheduledEnd,
+        hasMeetLink,
+        needsRecordingOrTranscript,
+        notTerminalError,
+        retryBackoffOk,
+        eligibleForSync,
+      ] = await Promise.all([
+        prisma.booking.count({ where: pastEnd }),
+        prisma.booking.count({ where: { AND: [pastEnd, linkOk] } }),
+        prisma.booking.count({ where: { AND: [pastEnd, linkOk, needMedia] } }),
+        prisma.booking.count({ where: { AND: [pastEnd, linkOk, needMedia, notTerminal] } }),
+        prisma.booking.count({ where: { AND: [pastEnd, linkOk, needMedia, notTerminal, retryOk] } }),
+        prisma.booking.count({ where: whereEligible }),
+      ]);
+
+      setLsqArtifactsSyncTelemetry({
+        bookingIds: [],
+        processedCount: 0,
+        status: "idle",
+        lastError: null,
+        funnelCounts: {
+          pastScheduledEnd,
+          hasMeetLink,
+          needsRecordingOrTranscript,
+          notTerminalError,
+          retryBackoffOk,
+          eligibleForSync,
+        },
+      });
+      return;
+    }
+
+    const bookingIds = due.map((b) => b.id);
     for (const booking of due) {
       // eslint-disable-next-line no-await-in-loop
       await syncOneBooking(booking);
     }
 
+    setLsqArtifactsSyncTelemetry({
+      bookingIds,
+      processedCount: due.length,
+      status: "processed",
+      lastError: null,
+      funnelCounts: null,
+    });
+
     logger.info(`LSQ artifacts sync processed ${due.length} booking(s)`);
   } catch (error) {
     logger.error(`LSQ artifacts sync loop failed: ${error.message}`);
+    setLsqArtifactsSyncTelemetry({
+      status: "error",
+      lastError: error.message || String(error),
+      funnelCounts: null,
+    });
   } finally {
     running = false;
   }
@@ -361,16 +482,17 @@ const startLsqArtifactsSyncJob = () => {
   }
 
   logger.info(
-    `LSQ artifacts sync enabled: poll=${env.lsq.pollMs}ms delay=${env.lsq.delayAfterMeetingMinutes}m retry=${env.lsq.retryEveryMinutes}m`,
+    `LSQ artifacts sync enabled: poll=${env.lsq.pollMs}ms delay=${env.lsq.delayAfterMeetingMinutes}m retry=${env.lsq.retryEveryMinutes}m maxPerRun=${env.lsq.maxPerRun} giveUpAfterHours=${env.lsq.artifactsUnavailableAfterHours}`,
   );
 
   setTimeout(() => {
     void syncDueBookings();
-  }, 8000);
+  }, 5000);
 
+  const pollMs = Math.max(60 * 1000, env.lsq.pollMs);
   const timer = setInterval(() => {
     void syncDueBookings();
-  }, Math.max(30000, env.lsq.pollMs));
+  }, pollMs);
 
   return () => clearInterval(timer);
 };
@@ -418,4 +540,5 @@ module.exports = {
   startLsqArtifactsSyncJob,
   syncDueBookings,
   syncBookingById,
+  getLsqArtifactsSyncTelemetry,
 };

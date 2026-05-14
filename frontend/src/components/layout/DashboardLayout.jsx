@@ -1,10 +1,11 @@
+import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion as M, useReducedMotion } from "framer-motion";
-import { useEffect } from "react";
 import { useAuthStore } from "../../models/auth.store";
 import { cn } from "../../utils/cn";
 import { pageEase } from "../motion/motionPresets";
 import { authService } from "../../services/auth.service";
+import { adminService } from "../../services/admin.service";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { TeacherSideNav } from "./teacher/TeacherSideNav";
@@ -35,6 +36,32 @@ export const DashboardLayout = () => {
   const { user, setUser } = useAuthStore();
   const isTeacher = user?.role === "teacher";
   const isAdmin = user?.role === "admin";
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    // console.info("[LSQ artifacts sync] admin telemetry poll started (every 20s)");
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await adminService.getLsqArtifactsSyncTelemetry();
+        if (cancelled) return;
+        const t = res?.data?.data ?? res?.data;
+        if (!t || typeof t !== "object") {
+          // console.warn("[LSQ artifacts sync] unexpected API response", res?.data);
+          return;
+        }
+        // Poll succeeded; admin telemetry logging disabled.
+      } catch {
+        // console.warn("[LSQ artifacts sync] telemetry request failed:", status ?? "?", msg);
+      }
+    };
+    void poll();
+    const id = setInterval(poll, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!isTeacher || !user?.id) return;

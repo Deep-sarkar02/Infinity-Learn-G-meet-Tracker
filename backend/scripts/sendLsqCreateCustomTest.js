@@ -54,7 +54,12 @@ async function main() {
     batchId: `cli-${suffix}`,
   };
   const teacher = { email: `teacher-${suffix}@example.com` };
-  const booking = { startTime: start, endTime: end, id: "cli-test" };
+  const booking = {
+    startTime: start,
+    endTime: end,
+    id: "cli-test",
+    meetingLink: "https://meet.google.com/ttx-nbnp-vwu",
+  };
   const contactEmail = `student-${suffix}@example.com`;
 
   const built = buildRosterBookingProspectActivityPayload({

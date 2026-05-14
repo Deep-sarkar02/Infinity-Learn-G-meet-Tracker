@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
@@ -40,6 +41,16 @@ app.get("/health", (_req, res) => {
   res.status(200).json({
     success: true,
     message: "Server is healthy",
+  });
+});
+
+/** Stable HTTPS URL for SES / Gmail `<img src>` (no auth). Set EMAIL_LOGO_URL to this origin + path if needed. */
+const publicLogoPath = path.join(__dirname, "../assets/il-logo.png");
+app.get("/public/il-logo.png", (req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+  res.type("png");
+  res.sendFile(publicLogoPath, (err) => {
+    if (err && !res.headersSent) res.status(404).end();
   });
 });
 

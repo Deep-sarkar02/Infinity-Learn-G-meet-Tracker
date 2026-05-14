@@ -147,7 +147,7 @@ const formatEmailTimeIst = (instant) => {
   }).format(d);
 };
 
-/** LeadSquared `ActivityDateTime` — IST wall clock as `YYYY-MM-DD HH:mm:ss`. */
+/** LeadSquared `ActivityDateTime` — IST wall clock as `YYYY-MM-DD HH:mm:ss` (no offset). */
 const formatLsqActivityDateTimeIst = (instant) => {
   const d = new Date(instant);
   if (Number.isNaN(d.getTime())) return "";
@@ -166,6 +166,16 @@ const formatLsqActivityDateTimeIst = (instant) => {
     if (p.type !== "literal") m[p.type] = p.value;
   }
   return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}:${m.second}`;
+};
+
+/**
+ * LeadSquared `ActivityDateTime` as UTC `YYYY-MM-DD HH:mm:ss` (no `Z` suffix).
+ * Many tenants parse naive datetimes as UTC; sending IST digits caused MXFutureDateTimeActivityNotAllowedException.
+ */
+const formatLsqActivityDateTimeUtc = (instant) => {
+  const d = new Date(instant);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 19).replace("T", " ");
 };
 
 /** LeadSquared custom date string in IST — `DD-MM-YYYY` (e.g. `10-05-2026`). */
@@ -213,6 +223,7 @@ module.exports = {
   formatEmailDateIst,
   formatEmailTimeIst,
   formatLsqActivityDateTimeIst,
+  formatLsqActivityDateTimeUtc,
   formatLsqDateDdMmYyyyIst,
   formatLsqTime12hIst,
 };

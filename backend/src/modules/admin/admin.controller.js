@@ -1,6 +1,7 @@
 const adminService = require("./admin.service");
 const rosterService = require("../roster/roster.service");
 const bookingService = require("../bookings/booking.service");
+const { getLsqArtifactsSyncTelemetry } = require("../integrations/lsq/lsqArtifacts.sync");
 
 const formatTeacher = (teacher) => ({
   id: teacher._id || teacher.id,
@@ -119,6 +120,13 @@ const listBookings = async (req, res) => {
   });
 };
 
+const getLsqArtifactsSyncTelemetryHandler = (_req, res) => {
+  res.status(200).json({
+    success: true,
+    data: getLsqArtifactsSyncTelemetry(),
+  });
+};
+
 const patchBookingMedia = async (req, res) => {
   const booking = await bookingService.updateBookingMedia(req.params.bookingId, req.body);
   res.status(200).json({
@@ -180,6 +188,7 @@ module.exports = {
   bulkImportRoster,
   listRosterStudents,
   listBookings,
+  getLsqArtifactsSyncTelemetryHandler,
   patchBookingMedia,
   getBookingDashboardStats,
   getBookingWeekdayStats,

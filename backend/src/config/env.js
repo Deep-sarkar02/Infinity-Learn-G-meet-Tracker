@@ -2,7 +2,7 @@ const path = require("path");
 const dotenv = require("dotenv");
 
 // Always load backend/.env (not cwd-relative). Starting Node from repo root or another folder
-// otherwise skips SMTP_* and the app reports "SMTP not configured".
+// otherwise skips AWS/SES_* and the app reports SES not configured.
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 /** Env truthy for flags like LSQ_PROSPECT_ACTIVITY_CLIENT_DEBUG (handles BOM/case). */
@@ -30,7 +30,7 @@ const corsOrigins = (process.env.CORS_ORIGINS || "")
 /** No trailing slash — used to build default email logo URL. */
 const appPublicUrl = (process.env.APP_PUBLIC_URL || "").trim().replace(/\/+$/, "");
 const explicitEmailLogo = (process.env.EMAIL_LOGO_URL || "").trim();
-/** HTML emails need a public HTTPS image URL; default to app origin + /il-logo.png (Vite public asset). */
+/** HTML emails: use a normal https image URL in `<img src>` (Gmail blocks data: URIs). Default: app origin + /il-logo.png. */
 const resolvedEmailLogoUrl =
   explicitEmailLogo || (appPublicUrl ? `${appPublicUrl}/il-logo.png` : "");
 
@@ -44,13 +44,18 @@ const env = {
   jwtSecret: process.env.JWT_SECRET || "unsafe-dev-secret",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "1d",
   bookingWindowDays: Number(process.env.BOOKING_WINDOW_DAYS) || 7,
-  smtp: {
-    host: process.env.SMTP_HOST || "",
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === "true",
-    user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || "",
-    from: process.env.EMAIL_FROM || "no-reply@example.com",
+  /**
+   * Teacher credential emails: Amazon SES v2 **SendEmail** + **Template** only (no Nodemailer/SMTP).
+   * Set SES_USE_DEFAULT_CREDENTIAL_CHAIN=true on ECS/EC2 with a task/instance role and omit static keys.
+   */
+  ses: {
+    region: (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim(),
+    /** Standard AWS names, or AWS_NOTIF_* if your platform injects notification IAM keys separately. */
+    accessKeyId: (process.env.AWS_ACCESS_KEY_ID || process.env.AWS_NOTIF_ACCESS_KEY || "").trim(),
+    secretAccessKey: (process.env.AWS_SECRET_ACCESS_KEY || process.env.AWS_NOTIF_SECRET_KEY || "").trim(),
+    from: (process.env.SES_FROM_EMAIL_ADDRESS || process.env.EMAIL_FROM || "").trim(),
+    templateName: (process.env.SES_TEACHER_CREDENTIALS_TEMPLATE_NAME || "INFINITY_LEARN_TEACHER_CREDENTIALS")
+      .trim(),
   },
   /** Branding for HTML notification emails (logo must be HTTPS for most mail clients). */
   email: {
@@ -83,12 +88,15 @@ const env = {
     apiSecretHeader:
       (process.env.LSQ_API_SECRET_HEADER || "X-Api-Secret").trim() || "X-Api-Secret",
     apiSecret: (process.env.LSQ_API_SECRET || "").trim(),
-    pollMs: Number(process.env.LSQ_SYNC_POLL_MS) || 10 * 60 * 1000,
+    /** Global poll interval while backend is up (default 30 minutes). */
+    pollMs: Number(process.env.LSQ_SYNC_POLL_MS) || 30 * 60 * 1000,
+    /** First LSQ fetch only after endTime + this many minutes (default 1). */
     delayAfterMeetingMinutes:
-      Number(process.env.LSQ_SYNC_DELAY_MINUTES_AFTER_END) || 10,
+      Number(process.env.LSQ_SYNC_DELAY_MINUTES_AFTER_END) || 1,
+    /** Same booking may be fetched again after this many minutes (default 1). */
     retryEveryMinutes:
-      Number(process.env.LSQ_SYNC_RETRY_MINUTES) || 10,
-    maxPerRun: Number(process.env.LSQ_SYNC_MAX_PER_RUN) || 25,
+      Number(process.env.LSQ_SYNC_RETRY_MINUTES) || 1,
+    maxPerRun: Number(process.env.LSQ_SYNC_MAX_PER_RUN) || 40,
     requestTimeoutMs: Number(process.env.LSQ_SYNC_REQUEST_TIMEOUT_MS) || 20000,
     /** Hours after session end before we mark recording+transcript as permanently not available (stops retries). */
     artifactsUnavailableAfterHours:
@@ -128,9 +136,8 @@ const env = {
     /** Digits only, no +. If set (e.g. 91) and mobile is 10 digits, LeadDetails.Phone becomes prefix+mobile. */
     phonePrefix: (process.env.LSQ_PROSPECT_ACTIVITY_PHONE_PREFIX || "").trim().replace(/\D/g, ""),
     /**
-     * When false (default), Activity.ActivityDateTime is "now" (IST) so tenants that forbid future
-     * activity times (MXFutureDateTimeActivityNotAllowedException) still accept the call. Session date/time
-     * remain in mx_Custom_5 / 6 / 10. Set to true only if LeadSquared allows future ActivityDateTime.
+     * When true, ActivityDateTime uses session start **capped to now** (UTC string) so LSQ never sees a future time.
+     * Session wall date/time remain in mx_Custom_5 / 6 / 10 (IST). Default uses "now" UTC.
      */
     useSessionStartForActivityDateTime: envFlagTrue(
       process.env.LSQ_PROSPECT_ACTIVITY_USE_SESSION_START_FOR_ACTIVITY_DATETIME,

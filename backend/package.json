@@ -33,6 +33,7 @@
   },
   "homepage": "https://github.com/Deep-sarkar02/Infinity-Learn-G-meet-Tracker#readme",
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1046.0",
     "@prisma/client": "^6.16.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -43,7 +44,6 @@
     "joi": "^18.1.2",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
-    "nodemailer": "^8.0.5",
     "pg": "^8.20.0",
     "prisma": "^6.16.2"
   },

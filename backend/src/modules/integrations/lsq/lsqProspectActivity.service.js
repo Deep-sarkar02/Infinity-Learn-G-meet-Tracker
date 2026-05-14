@@ -1,7 +1,7 @@
 const env = require("../../../config/env");
 const logger = require("../../../config/logger");
 const {
-  formatLsqActivityDateTimeIst,
+  formatLsqActivityDateTimeUtc,
   formatLsqDateDdMmYyyyIst,
   formatLsqTime12hIst,
 } = require("../../../utils/time");
@@ -82,15 +82,18 @@ function buildRosterBookingProspectActivityPayload({ roster, teacher, booking, c
   const firstName = String(roster?.name || "").trim() || "Student";
   const grade = roster?.grade != null && roster?.grade !== "" ? String(roster.grade) : "";
 
-  /** LSQ often rejects future ActivityDateTime; session slot stays in mx_Custom_5/6/10. */
-  const activityInstant = cfg.useSessionStartForActivityDateTime ? start : new Date();
-  const activityDateTime = formatLsqActivityDateTimeIst(activityInstant);
+  /** LSQ often parses naive ActivityDateTime as UTC — use UTC digits; never send a future instant. */
+  const nowMs = Date.now();
+  const preferredMs = cfg.useSessionStartForActivityDateTime ? start.getTime() : nowMs;
+  const activityInstant = new Date(Math.min(preferredMs, nowMs));
+  const activityDateTime = formatLsqActivityDateTimeUtc(activityInstant);
   const dateDdMmYyyy = formatLsqDateDdMmYyyyIst(start);
   const fromTime = formatLsqTime12hIst(start);
   const toTime = end && !Number.isNaN(end.getTime()) ? formatLsqTime12hIst(end) : "";
 
   const teacherEmail = String(teacher?.email || "").trim();
   const studentMeetEmail = String(contactEmail || "").trim();
+  const meetingLink = String(booking?.meetingLink || "").trim();
 
   /** Matches LeadSquared CreateCustom: LeadDetails = Attribute/Value array; Fields live under Activity. */
   const body = {
@@ -115,6 +118,7 @@ function buildRosterBookingProspectActivityPayload({ roster, teacher, booking, c
         { SchemaName: "mx_Custom_8", Value: String(roster?.batchName || "").trim() },
         { SchemaName: "mx_Custom_9", Value: String(roster?.batchId || "").trim() },
         { SchemaName: "mx_Custom_10", Value: toTime },
+        { SchemaName: "mx_Custom_11", Value: meetingLink },
       ],
     },
   };
@@ -177,10 +181,20 @@ async function notifyRosterBookingProspectActivity({ roster, teacher, booking, c
       signal: controller.signal,
     });
     const text = await res.text();
+    const looksLikeInvalidLsqKeys =
+      res.status === 401 ||
+      /MXInvalidUserDetailsException|Invalid User Details/i.test(text);
     if (!res.ok) {
       logger.warn(
         `[lsqProspectActivity] CreateCustom HTTP ${res.status} ${res.statusText}: ${text.slice(0, 500)}`,
       );
+      if (looksLikeInvalidLsqKeys) {
+        logger.warn(
+          "[lsqProspectActivity] LeadSquared rejected API keys (401 / Invalid User Details). " +
+            "Confirm LSQ_PROSPECT_ACTIVITY_ACCESS_KEY and LSQ_PROSPECT_ACTIVITY_SECRET_KEY. " +
+            "If you use Docker Compose env_file and a key contains $, Compose strips it unless you escape: use $$ for each literal $ in backend/.env (see docker-compose.yml top comment).",
+        );
+      }
       const bad = interpretLsqCreateCustomResponse(false, text);
       return {
         skipped: false,
@@ -196,6 +210,15 @@ async function notifyRosterBookingProspectActivity({ roster, teacher, booking, c
       logger.warn(
         `[lsqProspectActivity] CreateCustom LSQ rejected (HTTP ${res.status}): ${interpreted.detail}`,
       );
+      const detail = String(interpreted.detail || "");
+      const parsed = interpreted.parsed;
+      const ex = parsed && typeof parsed === "object" ? String(parsed.ExceptionType || "") : "";
+      if (/MXInvalidUserDetailsException|Invalid User Details/i.test(detail + ex)) {
+        logger.warn(
+          "[lsqProspectActivity] LeadSquared rejected API keys. " +
+            "If keys look correct, check Docker Compose: escape $ as $$ in LSQ_PROSPECT_ACTIVITY_* keys in backend/.env.",
+        );
+      }
       return {
         skipped: false,
         ok: false,

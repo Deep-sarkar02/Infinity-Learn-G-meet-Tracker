@@ -24,11 +24,11 @@ export const useAdminController = () => {
         pushToast({ title: "Teacher created and password emailed" });
       } else if (!d.smtpConfigured) {
         pushToast({
-          title: "Teacher created (SMTP not configured in backend .env — email not sent)",
+          title: "Teacher created (AWS SES not configured in backend .env — email not sent)",
         });
       } else {
         pushToast({
-          title: "Teacher created but email failed — check backend logs and Gmail app password",
+          title: "Teacher created but email failed — check backend logs and SES template / sandbox",
           variant: "error",
         });
       }
@@ -105,11 +105,11 @@ export const useAdminController = () => {
         pushToast({ title: "Password regenerated and emailed" });
       } else if (!d.smtpConfigured) {
         pushToast({
-          title: "Password regenerated (SMTP not configured in backend .env — email not sent)",
+          title: "Password regenerated (AWS SES not configured in backend .env — email not sent)",
         });
       } else {
         pushToast({
-          title: "Password regenerated but email failed — check backend logs and Gmail app password",
+          title: "Password regenerated but email failed — check backend logs and SES template / sandbox",
           variant: "error",
         });
       }
