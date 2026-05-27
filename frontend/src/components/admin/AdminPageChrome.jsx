@@ -4,7 +4,7 @@ import { cn } from "../../utils/cn";
 export const AdminPageHero = ({ eyebrow, title, description, children, className }) => (
   <div
     className={cn(
-      "relative overflow-hidden rounded-3xl border border-[#8BBCEB]/35 bg-gradient-to-br from-[#0B3C5D] via-[#1E73D8] to-[#8BBCEB] p-6 text-[#FFFFFF] shadow-[0_20px_48px_-18px_rgba(11,60,93,0.42)] md:p-8",
+      "relative overflow-hidden rounded-2xl border border-[#8BBCEB]/35 bg-gradient-to-br from-[#0B3C5D] via-[#1E73D8] to-[#8BBCEB] p-4 text-[#FFFFFF] shadow-[0_20px_48px_-18px_rgba(11,60,93,0.42)] md:p-5",
       className,
     )}
   >
@@ -17,7 +17,7 @@ export const AdminPageHero = ({ eyebrow, title, description, children, className
         {eyebrow ? (
           <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#F4D35E]">{eyebrow}</p>
         ) : null}
-        <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight md:text-3xl">{title}</h1>
+        <h1 className="mt-2 font-heading text-xl font-bold tracking-tight md:text-2xl">{title}</h1>
         {description ? (
           <p className="mt-2 text-sm font-medium leading-relaxed text-[#FFFFFF]/92">{description}</p>
         ) : null}
@@ -31,7 +31,7 @@ export const AdminPageHero = ({ eyebrow, title, description, children, className
 export const AdminPanel = ({ children, className }) => (
   <section
     className={cn(
-      "rounded-3xl border border-[#8BBCEB]/35 bg-[#FFFFFF] p-6 shadow-[0_12px_36px_-20px_rgba(11,60,93,0.28)]",
+      "rounded-2xl border border-[#8BBCEB]/35 bg-[#FFFFFF] p-4 shadow-[0_12px_36px_-20px_rgba(11,60,93,0.28)] md:p-5",
       className,
     )}
   >

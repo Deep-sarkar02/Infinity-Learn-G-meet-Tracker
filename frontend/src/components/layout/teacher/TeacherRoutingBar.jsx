@@ -1,51 +1,37 @@
 import { useAuthStore } from "../../../models/auth.store";
+import { listTeacherAssignments } from "../../admin/TeacherSingleAssignmentFields";
+import { BatchAssignmentMeta } from "../../BatchAssignmentMeta";
 
-const chipClass =
-  "inline-flex max-w-full items-center rounded-full border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-1 text-xs font-bold text-[#0B3C5D] shadow-sm";
+const cardClass =
+  "min-w-0 max-w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2 shadow-sm";
 
 /**
- * Shows grade, channel (display), and batch on every teacher screen — especially useful on mobile where the sidebar is hidden.
+ * Shows grade, channel, batch ID, and batch name on every teacher screen.
  */
 export const TeacherRoutingBar = () => {
   const user = useAuthStore((s) => s.user);
   if (!user || user.role !== "teacher") return null;
 
-  const grade = user.grade != null && String(user.grade).trim() !== "" ? String(user.grade).trim() : null;
-  const channel = user.display != null && String(user.display).trim() !== "" ? String(user.display).trim() : null;
-  const batchId = user.batchId != null && String(user.batchId).trim() !== "" ? String(user.batchId).trim() : null;
-  const batchName =
-    user.batchName != null && String(user.batchName).trim() !== "" ? String(user.batchName).trim() : null;
-
-  if (!grade && !channel && !batchId && !batchName) return null;
-
-  const batchLabel =
-    batchId && batchName ? `${batchId} · ${batchName}` : batchId || batchName || null;
+  const batchList = listTeacherAssignments(user);
+  if (!batchList.length) return null;
 
   return (
     <div
       className="border-b border-[#8BBCEB]/30 bg-gradient-to-r from-[#F5F5F5] via-[#FFFFFF] to-[#F5F5F5] px-6 py-3 md:px-8"
-      aria-label="Your teaching assignment"
+      aria-label="What you teach"
     >
-      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1E73D8]/75">Grade · channel · batch</p>
+      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1E73D8]/75">Teaches :-</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {grade ? (
-          <span className={chipClass} title={`Grade ${grade}`}>
-            <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/70">Grade</span>
-            <span className="truncate">{grade}</span>
-          </span>
-        ) : null}
-        {channel ? (
-          <span className={chipClass} title={channel}>
-            <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/70">Channel</span>
-            <span className="truncate">{channel}</span>
-          </span>
-        ) : null}
-        {batchLabel ? (
-          <span className={chipClass} title={batchLabel}>
-            <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/70">Batch</span>
-            <span className="truncate">{batchLabel}</span>
-          </span>
-        ) : null}
+        {batchList.map((b, index) => (
+          <div key={`${b.batchId}-${index}`} className={cardClass}>
+            {batchList.length > 1 ? (
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/70">
+                Entry {index + 1}
+              </p>
+            ) : null}
+            <BatchAssignmentMeta {...b} compact showBatchId />
+          </div>
+        ))}
       </div>
     </div>
   );

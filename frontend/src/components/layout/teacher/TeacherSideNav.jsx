@@ -3,6 +3,7 @@ import { FiCalendar, FiClock, FiHome, FiLogOut, FiList } from "react-icons/fi";
 import { useAuthStore } from "../../../models/auth.store";
 import { cn } from "../../../utils/cn";
 import { AppLogo } from "../../brand/AppLogo";
+import { TeacherTeachesBlock } from "../../admin/TeacherSingleAssignmentFields";
 
 const itemClass = (active) =>
   cn(
@@ -33,21 +34,10 @@ export const TeacherSideNav = () => {
         <AppLogo size="sm" className="mb-1" linkTo="/" />
         <div>
           <p className="text-xl font-bold tracking-[-0.025em] text-[#0B3C5D]">Hi, {firstName}</p>
-          {user?.grade ? (
-            <p className="mt-2 text-sm font-semibold text-[#0B3C5D]">
-              Grade taught: <span className="text-[#1E73D8]">{user.grade}</span>
-            </p>
-          ) : null}
-          {user?.display ? (
-            <p className="mt-1 text-sm font-semibold text-[#0B3C5D]">
-              Channel: <span className="text-[#1E73D8]">{user.display}</span>
-            </p>
-          ) : null}
-          {user?.batchId ? (
-            <p className="mt-1 text-sm font-semibold text-[#0B3C5D]">
-              Batch: <span className="text-[#1E73D8]">{user.batchId}</span>
-              {user?.batchName ? <span className="text-[#1E73D8]/80"> ({user.batchName})</span> : null}
-            </p>
+          {user ? (
+            <div className="mt-2">
+              <TeacherTeachesBlock teacher={user} />
+            </div>
           ) : null}
         </div>
 

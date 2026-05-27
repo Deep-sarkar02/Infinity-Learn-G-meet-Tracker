@@ -1,10 +1,17 @@
 import { normalizeMobile } from "./mobile";
+import {
+  BATCH_ID_MAX,
+  BATCH_NAME_MAX,
+  batchIdError,
+  batchNameError,
+  isValidBatchId,
+} from "./batchFields";
 
 const LIMITS = {
   userId: { min: 1, max: 120 },
   name: { min: 3, max: 120 },
-  batchName: { min: 3, max: 120 },
-  batchId: { min: 1, max: 120 },
+  batchName: { min: 1, max: BATCH_NAME_MAX },
+  batchId: { min: 1, max: BATCH_ID_MAX },
 };
 
 export const ROSTER_DISPLAY_OPTIONS = [
@@ -49,8 +56,8 @@ export const isValidTenDigitMobile = (digits) => /^[1-9]\d{9}$/.test(digits ?? "
 export const isGradeOneToTwelve = (raw) =>
   /^(12|11|10|[1-9])$/.test(String(raw ?? "").trim());
 
-export const isAlphanumericBatchId = (raw) =>
-  /^[a-zA-Z0-9]{1,80}$/.test(String(raw ?? "").trim());
+/** @deprecated Use `isValidBatchId` from `batchFields.js` */
+export const isAlphanumericBatchId = isValidBatchId;
 
 /**
  * Client-side check aligned with backend Joi rules (authoritative on server).
@@ -132,6 +139,12 @@ const rosterTextLiveError = (raw, label, max) => {
   return null;
 };
 
+const rosterBatchNameLiveError = (raw) => {
+  const t = String(raw ?? "").trim();
+  if (!t) return null;
+  return batchNameError(t);
+};
+
 const mobileLiveError = (digitsRaw) => {
   const d = String(digitsRaw ?? "");
   if (!d) return null;
@@ -210,7 +223,7 @@ export const computeRosterFormErrors = (form, { touched = {}, submitAttempt = fa
   if (!batchNameTrim && (touched.batchName || submitAttempt)) {
     errors.batchName = "Batch name is required";
   } else {
-    const bnErr = rosterTextLiveError(batchName, "Batch name", LIMITS.batchName.max);
+    const bnErr = rosterBatchNameLiveError(batchName);
     if (bnErr) errors.batchName = bnErr;
   }
 
@@ -281,14 +294,28 @@ export const validateRosterStudentForm = ({ userId, name, mobile, grade, display
   };
 };
 
-const teacherBatchNameErr = (raw) => {
-  const v = String(raw ?? "").trim();
-  if (!v) return "Batch name is required";
-  if (v.length > 120) return "Batch name must be at most 120 characters";
-  if (!/^[a-zA-Z0-9 ]+$/.test(v)) {
-    return "Batch name must be alphanumeric (letters, numbers, and spaces only)";
+const teacherBatchNameErr = (raw) => batchNameError(raw);
+
+const normalizeFormBatches = (form) => {
+  const topGrade = String(form.grade ?? "").trim();
+  const topDisplay = String(form.display ?? "").trim();
+  if (Array.isArray(form.batches) && form.batches.length) {
+    return form.batches.map((b) => ({
+      grade: String(b?.grade ?? topGrade).trim(),
+      display: String(b?.display ?? topDisplay).trim(),
+      batchId: String(b?.batchId ?? ""),
+      batchName: String(b?.batchName ?? ""),
+    }));
   }
-  return null;
+  const batchId = String(form.batchId ?? "").trim();
+  const batchName = String(form.batchName ?? "").trim();
+  if (topGrade && topDisplay && batchId && batchName) {
+    return [{ grade: topGrade, display: topDisplay, batchId, batchName }];
+  }
+  if (batchId || batchName || topGrade || topDisplay) {
+    return [{ grade: topGrade, display: topDisplay, batchId, batchName }];
+  }
+  return [{ grade: "", display: "", batchId: "", batchName: "" }];
 };
 
 export const computeTeacherFormErrors = (
@@ -299,10 +326,7 @@ export const computeTeacherFormErrors = (
   const name = String(form.name ?? "");
   const nameTrim = name.trim();
   const email = String(form.email ?? "").trim();
-  const grade = String(form.grade ?? "").trim();
-  const display = String(form.display ?? "").trim();
-  const batchId = String(form.batchId ?? "").trim();
-  const batchName = String(form.batchName ?? "");
+  const batchRows = normalizeFormBatches(form);
 
   if (!skipNameValidation) {
     if (!nameTrim && (touched.name || submitAttempt)) {
@@ -319,59 +343,107 @@ export const computeTeacherFormErrors = (
     errors.email = "Enter a valid email address";
   }
 
-  if (!grade && (touched.grade || submitAttempt)) {
-    errors.grade = "Grade is required";
-  } else if (grade && !isGradeOneToTwelve(grade)) {
-    errors.grade = "Grade must be a whole number from 1 to 12";
-  }
+  let completeCount = 0;
+  batchRows.forEach((row, index) => {
+    const grade = String(row.grade ?? "").trim();
+    const display = String(row.display ?? "").trim();
+    const batchId = String(row.batchId ?? "").trim();
+    const batchName = String(row.batchName ?? "").trim();
+    const rowTouched =
+      touched[`batches.${index}.grade`] ||
+      touched[`batches.${index}.display`] ||
+      touched[`batches.${index}.batchId`] ||
+      touched[`batches.${index}.batchName`] ||
+      touched.batches ||
+      submitAttempt;
 
-  if (!display && (touched.display || submitAttempt)) {
-    errors.display = "Display is required";
-  } else if (display && !TEACHER_DISPLAY_OPTIONS.includes(display)) {
-    errors.display = "Select a valid display option";
-  }
+    if (!grade && rowTouched) {
+      errors[`batches.${index}.grade`] = "Grade is required";
+    } else if (grade && !isGradeOneToTwelve(grade)) {
+      errors[`batches.${index}.grade`] = "Grade must be a whole number from 1 to 12";
+    }
 
-  if (!batchId && (touched.batchId || submitAttempt)) {
-    errors.batchId = "Batch ID is required";
-  } else if (batchId && !isAlphanumericBatchId(batchId)) {
-    errors.batchId = "Batch ID must be letters and numbers only (no spaces or symbols)";
-  }
+    if (!display && rowTouched) {
+      errors[`batches.${index}.display`] = "Channel is required";
+    } else if (display && !TEACHER_DISPLAY_OPTIONS.includes(display)) {
+      errors[`batches.${index}.display`] = "Select a valid channel";
+    }
 
-  if ((touched.batchName || submitAttempt) && !String(batchName ?? "").trim()) {
-    errors.batchName = "Batch name is required";
-  } else if (String(batchName ?? "").trim()) {
-    const err = teacherBatchNameErr(batchName);
-    if (err) errors.batchName = err;
+    if (!batchId && rowTouched) {
+      errors[`batches.${index}.batchId`] = "Batch ID is required";
+    } else if (batchId) {
+      const bErr = batchIdError(batchId);
+      if (bErr) errors[`batches.${index}.batchId`] = bErr;
+    }
+
+    if (!batchName && rowTouched) {
+      errors[`batches.${index}.batchName`] = "Batch name is required";
+    } else if (batchName) {
+      const err = teacherBatchNameErr(batchName);
+      if (err) errors[`batches.${index}.batchName`] = err;
+    }
+
+    if (
+      grade &&
+      display &&
+      batchId &&
+      batchName &&
+      isGradeOneToTwelve(grade) &&
+      TEACHER_DISPLAY_OPTIONS.includes(display) &&
+      isValidBatchId(batchId) &&
+      !teacherBatchNameErr(batchName)
+    ) {
+      completeCount += 1;
+    }
+  });
+
+  if (completeCount === 0 && (touched.batches || submitAttempt)) {
+    errors.batches = "Add at least one complete assignment (grade, channel, batch ID and name)";
   }
 
   return errors;
 };
 
 export const validateTeacherForm = (
-  { name, email, grade, display, batchId, batchName },
+  form,
   { skipNameValidation = false } = {},
 ) => {
+  const batchRows = normalizeFormBatches(form);
+  const completeBatches = batchRows
+    .map((b) => ({
+      grade: String(b.grade ?? "").trim(),
+      display: String(b.display ?? "").trim(),
+      batchId: String(b.batchId ?? "").trim(),
+      batchName: String(b.batchName ?? "").trim(),
+    }))
+    .filter((b) => b.grade && b.display && b.batchId && b.batchName);
+
   const values = {
-    name: String(name ?? "").trim(),
-    email: String(email ?? "").trim().toLowerCase(),
-    grade: String(grade ?? "").trim(),
-    display: String(display ?? "").trim(),
-    batchId: String(batchId ?? "").trim(),
-    batchName: String(batchName ?? "").trim(),
+    name: String(form.name ?? "").trim(),
+    email: String(form.email ?? "").trim().toLowerCase(),
+    batches: completeBatches,
+    grade: completeBatches[0]?.grade ?? "",
+    display: completeBatches[0]?.display ?? "",
+    batchId: completeBatches[0]?.batchId ?? "",
+    batchName: completeBatches[0]?.batchName ?? "",
   };
 
-  const errors = computeTeacherFormErrors(values, {
-    touched: {
-      name: true,
-      email: true,
-      grade: true,
-      display: true,
-      batchId: true,
-      batchName: true,
-    },
-    submitAttempt: true,
-    skipNameValidation,
+  const touchedAll = { name: true, email: true, batches: true };
+  batchRows.forEach((_, index) => {
+    touchedAll[`batches.${index}.grade`] = true;
+    touchedAll[`batches.${index}.display`] = true;
+    touchedAll[`batches.${index}.batchId`] = true;
+    touchedAll[`batches.${index}.batchName`] = true;
   });
+
+  const errors = computeTeacherFormErrors(
+    { ...form, batches: batchRows },
+    {
+      touched: touchedAll,
+      submitAttempt: true,
+      skipNameValidation,
+    },
+  );
 
   return {
     ok: Object.keys(errors).length === 0,

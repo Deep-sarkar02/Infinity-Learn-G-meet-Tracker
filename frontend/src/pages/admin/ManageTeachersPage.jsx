@@ -13,11 +13,34 @@ import {
   validateTeacherForm,
 } from "../../utils/validators";
 import { AdminPageHero, AdminPanel } from "../../components/admin/AdminPageChrome";
+import { TeacherBatchesEditor, batchesFromTeacher } from "../../components/admin/TeacherBatchesEditor";
+import {
+  TeacherTeachesBlock,
+  listTeacherAssignments,
+} from "../../components/admin/TeacherSingleAssignmentFields";
 
 const GRADES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
 const PAGE_SIZE = 10;
 
 const normTeacherGrade = (g) => (g === undefined || g === null ? "" : String(g).trim());
+
+const teacherMatchesGradeFilter = (teacher, gradeFilter) => {
+  const assignments = listTeacherAssignments(teacher);
+  if (!assignments.length) return gradeFilter === "__none__";
+  if (gradeFilter === "__none__") {
+    return assignments.every((a) => !normTeacherGrade(a.grade));
+  }
+  return assignments.some((a) => normTeacherGrade(a.grade) === gradeFilter);
+};
+
+const teacherMatchesDisplayFilter = (teacher, displayFilter) => {
+  const assignments = listTeacherAssignments(teacher);
+  if (!assignments.length) return displayFilter === "__none__";
+  if (displayFilter === "__none__") {
+    return assignments.every((a) => !String(a.display || "").trim());
+  }
+  return assignments.some((a) => String(a.display || "").trim() === displayFilter);
+};
 
 export const ManageTeachersPage = () => {
   const { pushToast } = useToast();
@@ -51,18 +74,10 @@ export const ManageTeachersPage = () => {
   const filteredTeachers = useMemo(() => {
     let rows = teachers;
     if (gradeFilter) {
-      if (gradeFilter === "__none__") {
-        rows = rows.filter((t) => !normTeacherGrade(t.grade));
-      } else {
-        rows = rows.filter((t) => normTeacherGrade(t.grade) === gradeFilter);
-      }
+      rows = rows.filter((t) => teacherMatchesGradeFilter(t, gradeFilter));
     }
     if (displayFilter) {
-      if (displayFilter === "__none__") {
-        rows = rows.filter((t) => !String(t.display || "").trim());
-      } else {
-        rows = rows.filter((t) => String(t.display || "").trim() === displayFilter);
-      }
+      rows = rows.filter((t) => teacherMatchesDisplayFilter(t, displayFilter));
     }
     return rows;
   }, [teachers, gradeFilter, displayFilter]);
@@ -79,10 +94,7 @@ export const ManageTeachersPage = () => {
     setEditForm({
       name: teacher.name,
       email: teacher.email,
-      grade: String(teacher.grade ?? ""),
-      display: String(teacher.display ?? ""),
-      batchId: teacher.batchId || "",
-      batchName: teacher.batchName || "",
+      batches: batchesFromTeacher(teacher),
     });
     setEditTouched({});
     setEditSubmitAttempt(false);
@@ -104,23 +116,13 @@ export const ManageTeachersPage = () => {
     const { ok, values } = validateTeacherForm(editForm, { skipNameValidation: true });
     if (!ok) {
       setEditSubmitAttempt(true);
-      setEditTouched({
-        name: true,
-        email: true,
-        grade: true,
-        display: true,
-        batchId: true,
-        batchName: true,
-      });
+      setEditTouched({ name: true, email: true, batches: true });
       pushToast({ title: "Please fix the highlighted fields", variant: "error" });
       return;
     }
     const updated = await updateTeacher(editingTeacher.id, {
       email: values.email,
-      grade: values.grade,
-      display: values.display,
-      batchId: values.batchId,
-      batchName: values.batchName,
+      batches: values.batches,
     });
     if (updated) closeEdit();
   };
@@ -255,19 +257,8 @@ export const ManageTeachersPage = () => {
                     <p className="font-heading text-lg font-bold text-[#0B3C5D]">{teacher.name}</p>
                   </div>
                   <p className="mt-1 text-sm font-medium text-[#1E73D8]">{teacher.email}</p>
-                  <div className="mt-3 grid gap-2 text-xs font-semibold text-[#0B3C5D] sm:grid-cols-2">
-                    <p className="rounded-lg bg-[#F5F5F5] px-3 py-2">
-                      Batch ID: <span className="font-mono text-[#1E73D8]">{teacher.batchId || "—"}</span>
-                    </p>
-                    <p className="rounded-lg bg-[#F5F5F5] px-3 py-2">
-                      Batch name: <span className="text-[#1E73D8]">{teacher.batchName || "—"}</span>
-                    </p>
-                    <p className="rounded-lg bg-[#F5F5F5] px-3 py-2 sm:col-span-2">
-                      Grade taught: <span className="text-[#1E73D8]">{teacher.grade ?? "—"}</span>
-                    </p>
-                    <p className="rounded-lg bg-[#F5F5F5] px-3 py-2 sm:col-span-2">
-                      Display: <span className="text-[#1E73D8]">{teacher.display || "—"}</span>
-                    </p>
+                  <div className="mt-3">
+                    <TeacherTeachesBlock teacher={teacher} />
                   </div>
                   {generatedPasswords[teacher.id] ? (
                     <div className="mt-4 rounded-xl border border-[#8BBCEB]/40 bg-[#F5F5F5] p-3">
@@ -348,6 +339,7 @@ export const ManageTeachersPage = () => {
         title="Update teacher"
         confirmLabel="Save changes"
         tone="admin"
+        maxWidth="lg"
         onClose={closeEdit}
         onConfirm={saveEdit}
         confirmLoading={loading}
@@ -372,86 +364,13 @@ export const ManageTeachersPage = () => {
               onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))}
               required
             />
-            <label className="block space-y-1">
-              <span className="text-sm font-semibold text-[#0B3C5D]">
-                Grade <span className="text-[#F4D35E]">*</span>
-              </span>
-              <select
-                className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
-                value={editForm.grade}
-                onBlur={() => touchEdit("grade")}
-                onChange={(event) =>
-                  setEditForm((prev) => ({
-                    ...prev,
-                    grade: event.target.value,
-                  }))
-                }
-                required
-              >
-                <option value="">Select grade</option>
-                {GRADES.map((g) => (
-                  <option key={g} value={g}>
-                    Grade {g}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.grade ? <p className="text-xs font-medium text-[#0B3C5D]">{fieldErrors.grade}</p> : null}
-            </label>
-            <label className="block space-y-1">
-              <span className="text-sm font-semibold text-[#0B3C5D]">
-                Display <span className="text-[#F4D35E]">*</span>
-              </span>
-              <select
-                className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
-                value={editForm.display}
-                onBlur={() => touchEdit("display")}
-                onChange={(event) =>
-                  setEditForm((prev) => ({
-                    ...prev,
-                    display: event.target.value,
-                  }))
-                }
-                required
-              >
-                <option value="">Select display</option>
-                {TEACHER_DISPLAY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.display ? (
-                <p className="text-xs font-medium text-[#0B3C5D]">{fieldErrors.display}</p>
-              ) : null}
-            </label>
-            <Input
-              tone="admin"
-              label="Batch ID"
-              value={editForm.batchId}
-              error={fieldErrors.batchId}
-              onBlur={() => touchEdit("batchId")}
-              onChange={(event) =>
-                setEditForm((prev) => ({
-                  ...prev,
-                  batchId: event.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 80),
-                }))
-              }
-              required
-            />
-            <Input
-              tone="admin"
-              label="Batch name"
-              value={editForm.batchName}
-              maxLength={120}
-              error={fieldErrors.batchName}
-              onBlur={() => touchEdit("batchName")}
-              onChange={(event) =>
-                setEditForm((prev) => ({
-                  ...prev,
-                  batchName: event.target.value.replace(/[^a-zA-Z0-9 ]/g, "").slice(0, 120),
-                }))
-              }
-              required
+            <TeacherBatchesEditor
+              batches={editForm.batches}
+              onChange={(batches) => setEditForm((prev) => ({ ...prev, batches }))}
+              errors={fieldErrors}
+              touched={editTouched}
+              submitAttempt={editSubmitAttempt}
+              onTouchBatch={(index, field) => touchEdit(`batches.${index}.${field}`)}
             />
             <p className="text-xs font-medium text-[#1E73D8]/85">
               Name is read-only. Other fields follow the same rules as when adding a teacher.

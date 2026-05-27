@@ -5,6 +5,8 @@ import { useAuthStore } from "../../models/auth.store";
 import { useTeacherController } from "../../controllers/teacher.controller";
 import { toDateLabel } from "../../utils/date";
 import { BookingHero, BookingPanel } from "../../components/teacher/TeacherWorkspaceChrome";
+import { listTeacherAssignments } from "../../components/admin/TeacherSingleAssignmentFields";
+import { BatchAssignmentMeta } from "../../components/BatchAssignmentMeta";
 
 const relUntil = (d) => {
   const diff = d.getTime() - Date.now();
@@ -20,9 +22,7 @@ const relUntil = (d) => {
 export const TeacherDashboardPage = () => {
   const user = useAuthStore((state) => state.user);
   const { calendar, loading, loadCalendar } = useTeacherController();
-  const teacherMeta = [user?.grade ? `Grade ${user.grade}` : null, user?.display || null, user?.batchId ? `Batch ${user.batchId}` : null]
-    .filter(Boolean)
-    .join(" · ");
+  const assignments = listTeacherAssignments(user);
 
   useEffect(() => {
     loadCalendar();
@@ -61,17 +61,31 @@ export const TeacherDashboardPage = () => {
       <BookingHero
         eyebrow="Instructor workspace"
         title="Workspace overview"
-        description={
-          teacherMeta
-            ? `You are assigned to ${teacherMeta}${user?.batchName ? ` (${user.batchName})` : ""}. Manage your academic schedule and student sessions from one place.`
-            : "Manage your academic schedule and student sessions from one place."
-        }
+        description="Manage your academic schedule and student sessions from one place."
       >
         <span className="inline-flex items-center gap-2 rounded-full border border-[#FFFFFF]/25 bg-[#FFFFFF]/10 px-3 py-1.5 text-xs font-semibold text-[#F4D35E]">
           <span className="h-2 w-2 rounded-full bg-[#25D366]" />
           Live
         </span>
       </BookingHero>
+
+      {assignments.length ? (
+        <BookingPanel>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1E73D8]/75">Teaches :-</p>
+          <div className="mt-3 space-y-3">
+            {assignments.map((b, index) => (
+              <BatchAssignmentMeta
+                key={`${b.batchId}-${index}`}
+                grade={b.grade}
+                display={b.display}
+                batchId={b.batchId}
+                batchName={b.batchName}
+                showBatchId
+              />
+            ))}
+          </div>
+        </BookingPanel>
+      ) : null}
 
       <section className="grid gap-6 lg:grid-cols-2 lg:gap-8" aria-label="Primary actions">
         <BookingPanel className="relative !overflow-hidden">

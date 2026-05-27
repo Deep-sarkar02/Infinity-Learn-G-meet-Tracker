@@ -10,6 +10,7 @@ const formatTeacher = (teacher) => ({
   role: teacher.role,
   grade: teacher.grade,
   display: teacher.display,
+  batches: Array.isArray(teacher.batches) ? teacher.batches : [],
   batchId: teacher.batchId,
   batchName: teacher.batchName,
 });
@@ -18,12 +19,15 @@ const createTeacher = async (req, res) => {
   const result = await adminService.createTeacher(req.body);
   res.status(201).json({
     success: true,
-    message: "Teacher created successfully",
+    message: result.assignmentAdded
+      ? "Assignment(s) added to existing teacher"
+      : "Teacher created successfully",
     data: {
       teacher: formatTeacher(result.teacher),
       generatedPassword: result.plainPassword,
       emailSent: result.emailSent,
       smtpConfigured: result.smtpConfigured,
+      assignmentAdded: result.assignmentAdded,
     },
   });
 };
@@ -38,6 +42,9 @@ const bulkCreateTeachers = async (req, res) => {
         teacher: formatTeacher(row.teacher),
         emailSent: row.emailSent,
         smtpConfigured: row.smtpConfigured,
+      })),
+      assignmentsAdded: (result.assignmentsAdded || []).map((row) => ({
+        teacher: formatTeacher(row.teacher),
       })),
       skipped: result.skipped,
       failed: result.failed,

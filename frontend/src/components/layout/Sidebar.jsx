@@ -11,11 +11,11 @@ export const Sidebar = ({ role }) => {
   return (
     <aside
       className={cn(
-        "hidden w-[17rem] shrink-0 lg:block",
+        "hidden w-60 shrink-0 lg:block",
         teacher
-          ? "border-r border-teacher-line bg-white p-6"
+          ? "border-r border-teacher-line bg-white p-4"
           : admin
-            ? "border-r border-admin-primary/25 bg-admin-dark p-6 shadow-[4px_0_24px_-8px_rgba(11,60,93,0.35)]"
+            ? "border-r border-admin-primary/25 bg-admin-dark p-4 shadow-[4px_0_24px_-8px_rgba(11,60,93,0.35)]"
             : "border-r border-brand-100/70 bg-white/90 p-5",
       )}
     >

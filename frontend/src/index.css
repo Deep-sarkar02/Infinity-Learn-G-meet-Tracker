@@ -9,6 +9,11 @@
     @apply box-border;
   }
 
+  /* Slightly denser than browser default 16px — keeps forms readable at 100% zoom */
+  html {
+    font-size: 15px;
+  }
+
   body {
     @apply m-0 min-h-screen bg-slate-50 font-body text-slate-700 antialiased;
   }

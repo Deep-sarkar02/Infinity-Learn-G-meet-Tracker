@@ -1,8 +1,11 @@
+import { useEffect } from "react";
 import { Button } from "./Button";
 import { Loader } from "./Loader";
+import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
+import { renderModalPortal } from "./modalPortal";
 
 /**
- * @param {{ tone?: 'default' | 'admin' }} props
+ * @param {{ tone?: 'default' | 'admin', maxWidth?: 'md' | 'lg' }} props
  */
 export const Modal = ({
   open,
@@ -14,28 +17,58 @@ export const Modal = ({
   confirmDisabled,
   confirmLoading,
   tone = "default",
+  maxWidth = "md",
 }) => {
   const admin = tone === "admin" || tone === "brand";
-  return open ? (
+  useBodyScrollLock(open);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const widthClass = maxWidth === "lg" ? "max-w-2xl" : "max-w-lg";
+
+  return renderModalPortal(
     <div
       className={
         admin
-          ? "fixed inset-0 z-40 grid place-items-center bg-[#0B3C5D]/55 p-4 transition"
-          : "fixed inset-0 z-40 grid place-items-center bg-slate-900/40 p-4 transition"
+          ? "fixed inset-0 z-[200] flex items-end justify-center overflow-hidden bg-[#0B3C5D]/55 p-4 sm:items-center"
+          : "fixed inset-0 z-[200] flex items-end justify-center overflow-hidden bg-slate-900/40 p-4 sm:items-center"
       }
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      onClick={onClose}
     >
       <div
-        className={
+        className={`flex max-h-[min(90vh,100%)] w-full ${widthClass} flex-col overflow-hidden rounded-2xl shadow-[0_24px_56px_-20px_rgba(11,60,93,0.4)] ${
           admin
-            ? "w-full max-w-lg rounded-2xl border border-[#8BBCEB]/45 bg-[#FFFFFF] p-6 shadow-[0_24px_56px_-20px_rgba(11,60,93,0.4)]"
-            : "w-full max-w-lg rounded-2xl bg-white p-5 shadow-soft transition"
-        }
+            ? "border border-[#8BBCEB]/45 bg-[#FFFFFF]"
+            : "bg-white shadow-soft"
+        }`}
+        onClick={(e) => e.stopPropagation()}
       >
-        <h2 className={admin ? "font-heading text-lg font-bold text-[#0B3C5D]" : "text-lg font-semibold"}>
-          {title}
-        </h2>
-        <div className="mt-3">{children}</div>
-        <div className="mt-5 flex justify-end gap-2">
+        <div className={`shrink-0 px-6 pt-6 ${admin ? "" : "px-5 pt-5"}`}>
+          <h2
+            id="modal-title"
+            className={admin ? "font-heading text-lg font-bold text-[#0B3C5D]" : "text-lg font-semibold"}
+          >
+            {title}
+          </h2>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-3">{children}</div>
+        <div
+          className={`flex shrink-0 justify-end gap-2 border-t px-6 py-4 ${
+            admin ? "border-[#F5F5F5]" : "border-slate-100"
+          }`}
+        >
           <Button variant={admin ? "adminGhost" : "ghost"} onClick={onClose}>
             Cancel
           </Button>
@@ -52,6 +85,6 @@ export const Modal = ({
           </Button>
         </div>
       </div>
-    </div>
-  ) : null;
+    </div>,
+  );
 };

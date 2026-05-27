@@ -28,6 +28,7 @@ const {
   buildRosterBookingProspectActivityPayload,
   notifyRosterBookingProspectActivity,
 } = require("../integrations/lsq/lsqProspectActivity.service");
+const { teacherMatchesRoster, teacherBatchesInclude } = require("../../utils/teacherBatches");
 const prisma = process.env.DATABASE_URL ? getPrisma() : null;
 
 const assertPrisma = () => {
@@ -121,13 +122,20 @@ const bookSlot = async ({ studentId, availabilityId, slotId }) => {
 
   const teacher = await prisma.user.findFirst({
     where: { id: availability.teacherId, role: "teacher" },
+    include: teacherBatchesInclude,
   });
   if (!teacher) {
     throw new ApiError(404, "Teacher not found");
   }
 
-  if (teacher.grade !== student.grade) {
-    throw new ApiError(403, "Teacher grade does not match student grade");
+  const rosterLike = {
+    grade: student.grade,
+    display: student.display,
+    batchId: student.batchId,
+    batchName: student.batchName,
+  };
+  if (!teacherMatchesRoster(teacher, rosterLike)) {
+    throw new ApiError(403, "Teacher is not assigned to this student's grade, channel, and batch");
   }
 
   const bookingWindowDays = await adminService.getBookingWindowDays();
@@ -262,18 +270,13 @@ const bookSlotAsRoster = async ({
 
   const teacher = await prisma.user.findFirst({
     where: { id: availability.teacherId, role: "teacher" },
+    include: teacherBatchesInclude,
   });
   if (!teacher) {
     throw new ApiError(404, "Teacher not found");
   }
-  if (!sameText(teacher.grade, roster.grade)) {
-    throw new ApiError(403, "This teacher does not teach your class/grade");
-  }
-  if (!sameText(teacher.display, roster.display)) {
-    throw new ApiError(403, "This teacher is not mapped to your display/channel");
-  }
-  if (!sameText(teacher.batchId, roster.batchId) || !sameText(teacher.batchName, roster.batchName)) {
-    throw new ApiError(403, "This teacher is not mapped to your batch");
+  if (!teacherMatchesRoster(teacher, roster)) {
+    throw new ApiError(403, "This teacher is not mapped to your grade, channel, or batch");
   }
 
   const bookingWindowDays = await adminService.getBookingWindowDays();

@@ -17,8 +17,11 @@ const assertPrisma = () => {
   if (!prisma) throw new ApiError(500, "Postgres is not configured");
 };
 
-const sameText = (a, b) =>
-  String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+const {
+  teacherMatchesRoster,
+  teacherBatchesInclude,
+  teachersForRosterWhere,
+} = require("../../utils/teacherBatches");
 
 const getRecordId = (record) => record?.id || record?._id || null;
 
@@ -71,28 +74,12 @@ const getOpenSlots = async ({ rosterStudentId, date }) => {
         })
       : null;
 
-    const teachersByGrade = await prisma.user.findMany({
-      where: {
-        role: "teacher",
-        grade: roster.grade,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        grade: true,
-        display: true,
-        batchId: true,
-        batchName: true,
-      },
+    const candidateTeachers = await prisma.user.findMany({
+      where: teachersForRosterWhere(roster),
+      include: teacherBatchesInclude,
     });
 
-    const teachers = teachersByGrade.filter(
-      (teacher) =>
-        sameText(teacher.display, roster.display) &&
-        sameText(teacher.batchId, roster.batchId) &&
-        sameText(teacher.batchName, roster.batchName),
-    );
+    const teachers = candidateTeachers.filter((teacher) => teacherMatchesRoster(teacher, roster));
 
     if (!teachers.length) {
       return {

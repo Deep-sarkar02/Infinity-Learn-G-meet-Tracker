@@ -39,24 +39,27 @@ const rosterFreeText = (label) =>
     "string.max": `${label} must be at most 120 characters`,
   });
 
-const createTeacherSchema = Joi.object({
-  name: personName,
-  email: Joi.string().trim().email().required(),
+const teacherBatchRowSchema = Joi.object({
   grade,
   display: rosterDisplaySchema,
   batchId,
-  batchName: Joi.string()
-    .trim()
-    .min(1)
-    .max(120)
-    .pattern(/^[a-zA-Z0-9 ]+$/)
-    .required()
-    .messages({
-      "string.pattern.base":
-        "Batch name must be alphanumeric (letters, numbers, and spaces only)",
-      "string.empty": "Batch name is required",
-    }),
+  batchName,
 });
+
+const createTeacherSchema = Joi.object({
+  name: personName,
+  email: Joi.string().trim().email().required(),
+  batches: Joi.array().items(teacherBatchRowSchema).min(1).max(30).optional(),
+  grade: grade.optional(),
+  display: rosterDisplaySchema.optional(),
+  batchId: batchId.optional(),
+  batchName: batchName.optional(),
+})
+  .or("batches", "batchId")
+  .messages({
+    "object.missing":
+      "Provide batches (assignments with grade, channel, batch) or legacy batchId with batchName",
+  });
 
 const teacherBulkSchema = Joi.object({
   teachers: Joi.array().items(createTeacherSchema).min(1).required(),
@@ -69,21 +72,16 @@ const assignGradeSchema = Joi.object({
 /** Update teacher profile (name is not editable via this endpoint). */
 const updateTeacherDetailsSchema = Joi.object({
   email: Joi.string().trim().email().required(),
-  grade,
-  display: rosterDisplaySchema,
-  batchId,
-  batchName: Joi.string()
-    .trim()
-    .min(1)
-    .max(120)
-    .pattern(/^[a-zA-Z0-9 ]+$/)
-    .required()
-    .messages({
-      "string.pattern.base":
-        "Batch name must be alphanumeric (letters, numbers, and spaces only)",
-      "string.empty": "Batch name is required",
-    }),
-});
+  batches: Joi.array().items(teacherBatchRowSchema).min(1).max(30).optional(),
+  grade: grade.optional(),
+  display: rosterDisplaySchema.optional(),
+  batchId: batchId.optional(),
+  batchName: batchName.optional(),
+})
+  .or("batches", "batchId")
+  .messages({
+    "object.missing": "Provide batches (assignments) or legacy batchId with batchName",
+  });
 
 const configureBookingWindowSchema = Joi.object({
   bookingWindowDays: Joi.number().integer().min(1).max(60).required(),

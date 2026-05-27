@@ -44,7 +44,7 @@ services:
         if [ "$${SKIP_PRISMA_PUSH:-}" = "1" ]; then
           exec node src/server.js
         else
-          npx prisma db push && exec node src/server.js
+          npx prisma db push --accept-data-loss && exec node src/server.js
         fi
     expose:
       - "5000"

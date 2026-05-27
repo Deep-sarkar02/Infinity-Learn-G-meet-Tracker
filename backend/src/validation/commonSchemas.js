@@ -61,19 +61,34 @@ const grade = Joi.string()
     "string.empty": "Grade is required",
   });
 
+/** Roster / LMS batch identifier (UUID, slug, e.g. ff6a8182-ee25-4e40-88fd-34fb7e0b5f3a). */
+const BATCH_ID_MAX = 120;
 const batchId = Joi.string()
   .trim()
   .min(1)
-  .max(80)
-  .pattern(/^[a-zA-Z0-9]+$/)
+  .max(BATCH_ID_MAX)
+  .pattern(/^[a-zA-Z0-9_-]+$/)
   .required()
   .messages({
-    "string.pattern.base": "Batch ID must be letters and numbers only (no spaces or symbols)",
-    "string.max": "Batch ID must be at most 80 characters",
+    "string.pattern.base":
+      "Batch ID may use letters, numbers, hyphens, and underscores (e.g. UUID)",
+    "string.max": `Batch ID must be at most ${BATCH_ID_MAX} characters`,
     "string.empty": "Batch ID is required",
   });
 
-const batchName = properLabel("Batch name");
+/** Schedule / roster label (e.g. Icse-6-3||4-8||M-satsun||7 Pm - 8 Pm||Apr). */
+const BATCH_NAME_MAX = 500;
+const batchName = Joi.string()
+  .trim()
+  .min(1)
+  .max(BATCH_NAME_MAX)
+  .pattern(/^[\p{L}\p{N}\s|:\-.,()/&_]+$/u)
+  .required()
+  .messages({
+    "string.pattern.base": "Batch name contains unsupported characters",
+    "string.max": `Batch name must be at most ${BATCH_NAME_MAX} characters`,
+    "string.empty": "Batch name is required",
+  });
 
 const contactEmail = Joi.string()
   .trim()
@@ -107,6 +122,8 @@ module.exports = {
   grade,
   batchId,
   batchName,
+  BATCH_ID_MAX,
+  BATCH_NAME_MAX,
   contactEmail,
   objectIdString,
 };

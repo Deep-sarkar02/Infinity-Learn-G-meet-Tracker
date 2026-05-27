@@ -14,6 +14,8 @@ import { isValidContactEmail, validateLookupForm } from "../../utils/validators"
 import { cn } from "../../utils/cn";
 import { logParentWhatsAppFromApi } from "../../utils/parentWhatsAppConsole";
 import { logLsqProspectActivityFromApi } from "../../utils/lsqProspectActivityConsole";
+import { BatchAssignmentMeta } from "../../components/BatchAssignmentMeta";
+import { renderModalPortal } from "../../components/ui/modalPortal";
 
 const RESCHEDULE_ACK_STORAGE_KEY = "il_open_booking_reschedule_ack_v1";
 
@@ -389,12 +391,12 @@ export const OpenBookingPage = () => {
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1E73D8]">Verified student</p>
                   <p className="font-heading text-xl font-bold text-[#0B3C5D]">{roster.name}</p>
-                  <p className="mt-1 text-sm font-medium text-[#1E73D8]/90">
-                    Grade {roster.grade}
-                    {roster.display ? ` · Channel ${roster.display}` : ""}
-                    {roster.batchId ? ` · Batch ID ${roster.batchId}` : ""}
-                    {roster.batchName ? ` · ${roster.batchName}` : ""}
-                  </p>
+                  <BatchAssignmentMeta
+                    className="mt-1"
+                    grade={roster.grade}
+                    display={roster.display}
+                    batchName={roster.batchName}
+                  />
                 </div>
               </div>
               <Button
@@ -671,28 +673,30 @@ export const OpenBookingPage = () => {
           </div>
         ) : null}
 
-        {bookingInProgress ? (
-          <div
-            className="fixed inset-0 z-[150] flex items-center justify-center bg-[#0B3C5D]/50 p-6 backdrop-blur-[2px]"
-            role="alertdialog"
-            aria-busy="true"
-            aria-live="assertive"
-            aria-label="Booking in progress"
-          >
-            <div className="flex max-w-sm flex-col items-center gap-5 rounded-2xl border border-[#8BBCEB]/45 bg-[#FFFFFF] px-10 py-12 text-center shadow-[0_24px_56px_-20px_rgba(11,60,93,0.4)]">
-              <span
-                className="h-14 w-14 shrink-0 animate-spin rounded-full border-4 border-[#8BBCEB] border-t-[#1E73D8]"
-                aria-hidden
-              />
-              <div>
-                <p className="font-heading text-lg font-bold text-[#0B3C5D]">Booking in progress</p>
-                <p className="mt-2 text-sm font-medium leading-relaxed text-[#1E73D8]/90">
-                  Please wait while we confirm your session…
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {bookingInProgress
+          ? renderModalPortal(
+              <div
+                className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0B3C5D]/55 p-6 backdrop-blur-[2px]"
+                role="alertdialog"
+                aria-busy="true"
+                aria-live="assertive"
+                aria-label="Booking in progress"
+              >
+                <div className="flex max-w-sm flex-col items-center gap-5 rounded-2xl border border-[#8BBCEB]/45 bg-[#FFFFFF] px-10 py-12 text-center shadow-[0_24px_56px_-20px_rgba(11,60,93,0.4)]">
+                  <span
+                    className="h-14 w-14 shrink-0 animate-spin rounded-full border-4 border-[#8BBCEB] border-t-[#1E73D8]"
+                    aria-hidden
+                  />
+                  <div>
+                    <p className="font-heading text-lg font-bold text-[#0B3C5D]">Booking in progress</p>
+                    <p className="mt-2 text-sm font-medium leading-relaxed text-[#1E73D8]/90">
+                      Please wait while we confirm your session…
+                    </p>
+                  </div>
+                </div>
+              </div>,
+            )
+          : null}
 
         <InfoModal
           open={rescheduleNotice.open}
@@ -783,12 +787,13 @@ export const OpenBookingPage = () => {
                   className="w-full rounded-xl border border-[#8BBCEB]/45 bg-[#F5F5F5]/60 p-4 text-left transition hover:border-[#1E73D8]/50 hover:bg-[#FFFFFF]"
                 >
                   <p className="font-heading text-base font-bold text-[#0B3C5D]">{student.name}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#1E73D8]/90">
-                    Grade {student.grade}
-                    {student.display ? ` · Channel ${student.display}` : ""}
-                    {student.batchId ? ` · Batch ID ${student.batchId}` : ""}
-                    {student.batchName ? ` · ${student.batchName}` : ""}
-                  </p>
+                  <BatchAssignmentMeta
+                    className="mt-1"
+                    compact
+                    grade={student.grade}
+                    display={student.display}
+                    batchName={student.batchName}
+                  />
                 </button>
               </li>
             ))}

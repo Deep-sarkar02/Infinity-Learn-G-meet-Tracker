@@ -18,19 +18,26 @@ export const useAdminController = () => {
     setLoading(true);
     try {
       const { data } = await adminService.createTeacher(payload);
-      addTeacherToStore(data.data.teacher);
       const d = data.data;
-      if (d.emailSent) {
-        pushToast({ title: "Teacher created and password emailed" });
-      } else if (!d.smtpConfigured) {
+      if (d.assignmentAdded) {
+        mergeTeacher(d.teacher.id, d.teacher);
         pushToast({
-          title: "Teacher created (AWS SES not configured in backend .env — email not sent)",
+          title: "Assignment(s) added to existing teacher (same email — no new password email)",
         });
       } else {
-        pushToast({
-          title: "Teacher created but email failed — check backend logs and SES template / sandbox",
-          variant: "error",
-        });
+        addTeacherToStore(d.teacher);
+        if (d.emailSent) {
+          pushToast({ title: "Teacher created and password emailed" });
+        } else if (!d.smtpConfigured) {
+          pushToast({
+            title: "Teacher created (AWS SES not configured in backend .env — email not sent)",
+          });
+        } else {
+          pushToast({
+            title: "Teacher created but email failed — check backend logs and SES template / sandbox",
+            variant: "error",
+          });
+        }
       }
       return data.data;
     } catch (error) {

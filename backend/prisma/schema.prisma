@@ -31,17 +31,36 @@ model User {
   grade         String?  @db.VarChar(8)
   display       String?  @db.VarChar(120)
   batchId       String?  @map("batch_id") @db.VarChar(120)
-  batchName     String?  @map("batch_name") @db.VarChar(160)
+  batchName     String?  @map("batch_name") @db.VarChar(500)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   teacherAvailabilities Availability[] @relation("TeacherAvailabilities")
   teacherBookings       Booking[]      @relation("TeacherBookings")
   studentBookings       Booking[]      @relation("StudentBookings")
+  teacherBatches        TeacherBatch[]
 
   @@map("users")
   @@index([role], map: "idx_users_role")
   @@index([role, grade, display, batchId, batchName], map: "idx_users_teacher_routing")
+}
+
+/** A teacher may serve multiple roster assignments (each with its own grade, channel, batch). */
+model TeacherBatch {
+  id         String   @id @default(uuid()) @db.Uuid
+  teacherId  String   @map("teacher_id") @db.Uuid
+  grade      String?  @db.VarChar(8)
+  display    String?  @db.VarChar(120)
+  batchId    String   @map("batch_id") @db.VarChar(120)
+  batchName  String   @map("batch_name") @db.VarChar(500)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  teacher User @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@map("teacher_batches")
+  @@unique([teacherId, grade, display, batchId, batchName], map: "ux_teacher_assignment")
+  @@index([teacherId], map: "idx_teacher_batch_teacher")
+  @@index([grade, display, batchId, batchName], map: "idx_teacher_batch_routing")
 }
 
 model AppSetting {
@@ -63,7 +82,7 @@ model RosterStudent {
   grade         String   @db.VarChar(8)
   display       String   @db.VarChar(120)
   batchId       String   @map("batch_id") @db.VarChar(120)
-  batchName     String   @map("batch_name") @db.VarChar(160)
+  batchName     String   @map("batch_name") @db.VarChar(500)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 

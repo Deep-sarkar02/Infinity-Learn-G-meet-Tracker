@@ -24,22 +24,63 @@ const generateTempPassword = (length = 12) => {
 };
 
 const prisma = process.env.DATABASE_URL ? getPrisma() : null;
+const {
+  normalizeTeacherBatchesInput,
+  replaceTeacherBatches,
+  migrateLegacyTeacherBatches,
+  backfillTeacherBatchRouting,
+  teacherBatchesInclude,
+  shapeTeacherBatchesForApi,
+  formatBatchesForEmail,
+  primaryRoutingFromList,
+  listAssignmentsForTeacher,
+  dedupeBatches,
+  mergeAssignmentLists,
+} = require("../../utils/teacherBatches");
 
 const toTeacherShape = (teacher) => {
   if (!teacher) return null;
-  if (teacher._id) return teacher;
+  const batchFields = shapeTeacherBatchesForApi(teacher);
   return {
     _id: teacher.legacyMongoId || teacher.id,
     id: teacher.id,
     name: teacher.name,
     email: teacher.email,
     role: teacher.role,
-    grade: teacher.grade,
-    display: teacher.display,
-    batchId: teacher.batchId,
-    batchName: teacher.batchName,
+    ...batchFields,
     createdAt: teacher.createdAt,
     updatedAt: teacher.updatedAt,
+  };
+};
+
+const loadTeacherWithBatches = async (idWhere) => {
+  const teacher = await prisma.user.findFirst({
+    where: { AND: [idWhere, { role: "teacher" }] },
+    include: teacherBatchesInclude,
+  });
+  return teacher;
+};
+
+const appendAssignmentsToTeacher = async (teacherId, payload) => {
+  const incoming = normalizeTeacherBatchesInput(payload);
+  if (!incoming.length) {
+    throw new ApiError(400, "At least one assignment (grade, channel, batch) is required");
+  }
+  const current = await loadTeacherWithBatches({ id: teacherId });
+  if (!current) {
+    throw new ApiError(404, "Teacher not found");
+  }
+  const existingAssignments = listAssignmentsForTeacher(current);
+  const merged = mergeAssignmentLists(existingAssignments, incoming);
+  const addedCount = Math.max(0, merged.length - existingAssignments.length);
+  await replaceTeacherBatches(prisma, teacherId, merged);
+  const name = String(payload.name ?? "").trim();
+  if (name) {
+    await prisma.user.update({ where: { id: teacherId }, data: { name } });
+  }
+  return {
+    teacher: await loadTeacherWithBatches({ id: teacherId }),
+    addedCount,
   };
 };
 
@@ -49,9 +90,27 @@ const createTeacher = async (payload) => {
   }
   const email = payload.email.toLowerCase();
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    throw new ApiError(409, "Email is already in use");
+
+  if (existing?.role === "teacher") {
+    const { teacher: teacherWithBatches, addedCount } = await appendAssignmentsToTeacher(existing.id, payload);
+    return {
+      teacher: toTeacherShape(teacherWithBatches),
+      plainPassword: null,
+      emailSent: false,
+      smtpConfigured: isSmtpConfigured(),
+      assignmentAdded: addedCount > 0,
+      assignmentsAddedCount: addedCount,
+    };
   }
+  if (existing) {
+    throw new ApiError(409, "Email is already in use by a non-teacher account");
+  }
+
+  const batches = normalizeTeacherBatchesInput(payload);
+  if (!batches.length) {
+    throw new ApiError(400, "At least one assignment (grade, channel, batch) is required");
+  }
+  const primary = primaryRoutingFromList(batches);
 
   const plainPassword = generateTempPassword();
   const passwordHash = await bcrypt.hash(plainPassword, 10);
@@ -60,23 +119,26 @@ const createTeacher = async (payload) => {
       name: payload.name,
       email,
       passwordHash,
-      grade: payload.grade,
-      display: payload.display,
-      batchId: payload.batchId,
-      batchName: payload.batchName,
       role: "teacher",
+      grade: primary.grade,
+      display: primary.display,
+      batchId: primary.batchId,
+      batchName: primary.batchName,
     },
   });
+  await replaceTeacherBatches(prisma, teacher.id, batches);
+  const teacherWithBatches = await loadTeacherWithBatches({ id: teacher.id });
+  const shaped = shapeTeacherBatchesForApi(teacherWithBatches);
 
   let emailSent = false;
   try {
     emailSent = await sendTeacherCredentials({
-      teacherName: teacher.name,
-      teacherEmail: teacher.email,
+      teacherName: teacherWithBatches.name,
+      teacherEmail: teacherWithBatches.email,
       plainPassword,
-      grade: teacher.grade,
-      batchId: teacher.batchId,
-      batchName: teacher.batchName,
+      grade: shaped.grade,
+      batchId: shaped.batchId,
+      batchName: shaped.batchName,
       variant: "welcome",
     });
   } catch (error) {
@@ -84,28 +146,56 @@ const createTeacher = async (payload) => {
   }
 
   return {
-    teacher,
+    teacher: toTeacherShape(teacherWithBatches),
     plainPassword,
     emailSent,
     smtpConfigured: isSmtpConfigured(),
+    assignmentAdded: false,
   };
 };
 
 const createTeachersBulk = async (teachers) => {
   const created = [];
+  const assignmentsAdded = [];
   const skipped = [];
   const failed = [];
+  const rows = Array.isArray(teachers) ? teachers : [];
 
-  for (const row of teachers) {
+  for (const row of rows) {
+    const email = String(row?.email || "").trim().toLowerCase();
     try {
-      const result = await createTeacher(row);
-      created.push({
+      const batches = dedupeBatches(normalizeTeacherBatchesInput(row));
+      if (!batches.length) {
+        skipped.push({
+          email,
+          reason: "At least one complete assignment is required",
+        });
+        continue;
+      }
+      const result = await createTeacher({
+        ...row,
+        batches,
+        email,
+      });
+      const item = {
         teacher: result.teacher,
         emailSent: result.emailSent,
         smtpConfigured: result.smtpConfigured,
-      });
+        assignmentsAddedCount: result.assignmentsAddedCount ?? 0,
+      };
+      if (result.assignmentAdded) {
+        assignmentsAdded.push(item);
+      } else {
+        if (item.assignmentsAddedCount === 0 && result.plainPassword === null) {
+          skipped.push({
+            email,
+            reason: "Teacher is already linked with the same grade/channel/batch assignment",
+          });
+        } else {
+          created.push(item);
+        }
+      }
     } catch (error) {
-      const email = String(row?.email || "").trim().toLowerCase();
       if (error instanceof ApiError && error.statusCode === 409) {
         skipped.push({
           email,
@@ -122,6 +212,7 @@ const createTeachersBulk = async (teachers) => {
 
   return {
     created,
+    assignmentsAdded,
     skipped,
     failed,
   };
@@ -132,21 +223,16 @@ const listTeachers = async () => {
   const rows = await prisma.user.findMany({
     where: { role: "teacher" },
     orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      legacyMongoId: true,
-      name: true,
-      email: true,
-      role: true,
-      grade: true,
-      display: true,
-      batchId: true,
-      batchName: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    include: teacherBatchesInclude,
   });
-  return rows.map(toTeacherShape);
+  await migrateLegacyTeacherBatches(prisma, rows);
+  await backfillTeacherBatchRouting(prisma);
+  const refreshed = await prisma.user.findMany({
+    where: { role: "teacher" },
+    orderBy: { createdAt: "desc" },
+    include: teacherBatchesInclude,
+  });
+  return refreshed.map(toTeacherShape);
 };
 
 const assignGradeToTeacher = async (teacherId, grade) => {
@@ -162,11 +248,7 @@ const assignGradeToTeacher = async (teacherId, grade) => {
   if (!teacher.count) {
     throw new ApiError(404, "Teacher not found");
   }
-  const updated = await prisma.user.findFirst({
-    where: {
-      AND: [idWhere, { role: "teacher" }],
-    },
-  });
+  const updated = await loadTeacherWithBatches(idWhere);
   return toTeacherShape(updated);
 };
 
@@ -186,26 +268,32 @@ const updateTeacherDetails = async (teacherId, payload) => {
     throw new ApiError(409, "Email is already in use");
   }
 
-  const updateResult = await prisma.user.updateMany({
-    where: {
-      AND: [idWhere, { role: "teacher" }],
-    },
-    data: {
-      email,
-      grade: payload.grade,
-      display: payload.display,
-      batchId: payload.batchId,
-      batchName: payload.batchName,
-    },
+  const batches = normalizeTeacherBatchesInput(payload);
+  if (!batches.length) {
+    throw new ApiError(400, "At least one batch is required");
+  }
+  const primary = primaryRoutingFromList(batches);
+
+  const existing = await prisma.user.findFirst({
+    where: { AND: [idWhere, { role: "teacher" }] },
+    select: { id: true },
   });
-  if (!updateResult.count) {
+  if (!existing) {
     throw new ApiError(404, "Teacher not found");
   }
-  const teacher = await prisma.user.findFirst({
-    where: {
-      AND: [idWhere, { role: "teacher" }],
+
+  await prisma.user.update({
+    where: { id: existing.id },
+    data: {
+      email,
+      grade: primary.grade,
+      display: primary.display,
+      batchId: primary.batchId,
+      batchName: primary.batchName,
     },
   });
+  await replaceTeacherBatches(prisma, existing.id, batches);
+  const teacher = await loadTeacherWithBatches({ id: existing.id });
   return toTeacherShape(teacher);
 };
 
@@ -213,11 +301,7 @@ const regenerateTeacherPassword = async (teacherId, sendEmail = true) => {
   if (!prisma) throw new ApiError(500, "Postgres is not configured");
   const idWhere = idOrLegacyWhere(teacherId);
   if (!idWhere) throw new ApiError(400, "Invalid teacher id");
-  const teacher = await prisma.user.findFirst({
-    where: {
-      AND: [idWhere, { role: "teacher" }],
-    },
-  });
+  const teacher = await loadTeacherWithBatches(idWhere);
   if (!teacher) {
     throw new ApiError(404, "Teacher not found");
   }
@@ -229,6 +313,8 @@ const regenerateTeacherPassword = async (teacherId, sendEmail = true) => {
     data: { passwordHash },
   });
 
+  const emailBatches = formatBatchesForEmail(shapeTeacherBatchesForApi(teacher).batches);
+
   let emailSent = false;
   if (sendEmail) {
     try {
@@ -237,8 +323,8 @@ const regenerateTeacherPassword = async (teacherId, sendEmail = true) => {
         teacherEmail: teacher.email,
         plainPassword,
         grade: teacher.grade,
-        batchId: teacher.batchId,
-        batchName: teacher.batchName,
+        batchId: emailBatches.batchId,
+        batchName: emailBatches.batchName,
         variant: "update",
       });
     } catch (error) {

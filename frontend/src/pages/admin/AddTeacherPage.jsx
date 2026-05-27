@@ -7,13 +7,17 @@ import { Loader } from "../../components/ui/Loader";
 import { InfoModal } from "../../components/ui/InfoModal";
 import { useAdminController } from "../../controllers/admin.controller";
 import { adminService } from "../../services/admin.service";
-import {
-  computeTeacherFormErrors,
-  TEACHER_DISPLAY_OPTIONS,
-  validateTeacherForm,
-} from "../../utils/validators";
+import { computeTeacherFormErrors, validateTeacherForm } from "../../utils/validators";
 import { useToast } from "../../hooks/useToast";
 import { AdminPageHero, AdminPanel } from "../../components/admin/AdminPageChrome";
+import {
+  TeacherSingleAssignmentFields,
+  emptySingleAssignmentForm,
+  formToValidationShape,
+  mapBatchFieldErrors,
+  touchAssignmentField,
+} from "../../components/admin/TeacherSingleAssignmentFields";
+import { sanitizeBatchIdInput, sanitizeBatchNameInput } from "../../utils/batchFields";
 
 const TEACHER_REQUIRED_HEADERS = [
   "Full Name",
@@ -43,18 +47,41 @@ const findHeader = (normalizedToActual, aliases) => {
   return null;
 };
 
+const assignmentKey = ({ email, grade, display, batchId, batchName }) =>
+  [
+    String(email ?? "").trim().toLowerCase(),
+    String(grade ?? "").trim().toLowerCase(),
+    String(display ?? "").trim().toLowerCase(),
+    String(batchId ?? "").trim().toLowerCase(),
+    String(batchName ?? "").trim().toLowerCase(),
+  ].join("|");
+
+const listTeacherAssignments = (teacher) => {
+  if (Array.isArray(teacher?.batches) && teacher.batches.length) {
+    return teacher.batches.map((b) => ({
+      grade: String(b.grade ?? "").trim(),
+      display: String(b.display ?? "").trim(),
+      batchId: String(b.batchId ?? "").trim(),
+      batchName: String(b.batchName ?? "").trim(),
+    }));
+  }
+  if (teacher?.grade && teacher?.display && teacher?.batchId && teacher?.batchName) {
+    return [
+      {
+        grade: String(teacher.grade ?? "").trim(),
+        display: String(teacher.display ?? "").trim(),
+        batchId: String(teacher.batchId ?? "").trim(),
+        batchName: String(teacher.batchName ?? "").trim(),
+      },
+    ];
+  }
+  return [];
+};
+
 export const AddTeacherPage = () => {
-  const GRADE_OPTIONS = Array.from({ length: 12 }, (_, idx) => String(idx + 1));
   const { pushToast } = useToast();
   const { addTeacher, loading } = useAdminController();
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    grade: "",
-    display: "",
-    batchId: "",
-    batchName: "",
-  });
+  const [form, setForm] = useState(emptySingleAssignmentForm);
   const [submitAttempt, setSubmitAttempt] = useState(false);
   const [touched, setTouched] = useState({});
   const [lastGeneratedPassword, setLastGeneratedPassword] = useState("");
@@ -65,13 +92,22 @@ export const AddTeacherPage = () => {
     validRows: [],
     invalidRows: [],
   });
+  const validationForm = useMemo(() => formToValidationShape(form), [form]);
+
   const fieldErrors = useMemo(
-    () => computeTeacherFormErrors(form, { touched, submitAttempt }),
-    [form, touched, submitAttempt],
+    () => mapBatchFieldErrors(computeTeacherFormErrors(validationForm, { touched, submitAttempt })),
+    [validationForm, touched, submitAttempt],
   );
 
   const touch = (key) => {
-    setTouched((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+    setTouched((prev) => {
+      const patch = touchAssignmentField(key);
+      const next = { ...prev };
+      for (const k of Object.keys(patch)) {
+        if (!next[k]) next[k] = true;
+      }
+      return next;
+    });
   };
 
   const copyPassword = async () => {
@@ -86,16 +122,17 @@ export const AddTeacherPage = () => {
 
   const onSubmit = async (event) => {
     event.preventDefault();
-    const { ok, values } = validateTeacherForm(form);
+    const { ok, values } = validateTeacherForm(validationForm);
     if (!ok) {
       setSubmitAttempt(true);
       setTouched({
         name: true,
         email: true,
-        grade: true,
-        display: true,
-        batchId: true,
-        batchName: true,
+        batches: true,
+        "batches.0.grade": true,
+        "batches.0.display": true,
+        "batches.0.batchId": true,
+        "batches.0.batchName": true,
       });
       pushToast({ title: "Please fix the highlighted fields", variant: "error" });
       return;
@@ -103,8 +140,17 @@ export const AddTeacherPage = () => {
 
     const created = await addTeacher(values);
     if (created) {
-      setLastGeneratedPassword(created.generatedPassword || "");
-      setForm({ name: "", email: "", grade: "", display: "", batchId: "", batchName: "" });
+      if (created.generatedPassword) {
+        setLastGeneratedPassword(created.generatedPassword);
+      }
+      setForm({
+        name: values.name,
+        email: values.email,
+        grade: "",
+        display: "",
+        batchId: "",
+        batchName: "",
+      });
       setTouched({});
       setSubmitAttempt(false);
     }
@@ -126,12 +172,14 @@ export const AddTeacherPage = () => {
     }
     setBulkUploading(true);
     try {
-      const { data } = await adminService.bulkCreateTeachers(bulkPreview.validRows);
+      const payloadRows = bulkPreview.validRows.map(({ __rowNumber, ...row }) => row);
+      const { data } = await adminService.bulkCreateTeachers(payloadRows);
       const created = data.data.created?.length ?? 0;
+      const added = data.data.assignmentsAdded?.length ?? 0;
       const skipped = data.data.skipped?.length ?? 0;
       const failed = data.data.failed?.length ?? 0;
       pushToast({
-        title: `Processed ${bulkPreview.validRows.length} valid row(s): ${created} created, ${skipped} duplicate, ${failed} failed, ${bulkPreview.invalidRows.length} invalid.`,
+        title: `Import done: ${created} new teacher(s), ${added} existing updated with more assignments, ${skipped} skipped, ${failed} failed, ${bulkPreview.invalidRows.length} invalid row(s).`,
       });
       closeBulkPreview();
     } catch (error) {
@@ -198,18 +246,23 @@ export const AddTeacherPage = () => {
           email: String(row[headerMap.email] ?? "").trim(),
           grade: String(row[headerMap.grade] ?? "").trim(),
           display: String(row[headerMap.display] ?? "").trim(),
-          batchId: String(row[headerMap.batchId] ?? "")
-            .replace(/[^a-zA-Z0-9]/g, "")
-            .trim()
-            .slice(0, 80),
-          batchName: String(row[headerMap.batchName] ?? "")
-            .replace(/[^a-zA-Z0-9 ]/g, "")
-            .trim()
-            .slice(0, 120),
+          batchId: sanitizeBatchIdInput(String(row[headerMap.batchId] ?? "").trim()),
+          batchName: sanitizeBatchNameInput(String(row[headerMap.batchName] ?? "").trim()),
         };
-        const { ok, values, errors } = validateTeacherForm(mapped, { skipNameValidation: true });
+        const rowForm = {
+          ...mapped,
+          batches: [
+            {
+              grade: mapped.grade,
+              display: mapped.display,
+              batchId: mapped.batchId,
+              batchName: mapped.batchName,
+            },
+          ],
+        };
+        const { ok, values, errors } = validateTeacherForm(rowForm, { skipNameValidation: true });
         if (ok) {
-          validRows.push(values);
+          validRows.push({ ...values, __rowNumber: index + 2 });
         } else {
           invalidRows.push({
             rowNumber: index + 2,
@@ -218,52 +271,43 @@ export const AddTeacherPage = () => {
         }
       });
 
-      // Enforce unique teacher emails: no existing DB emails, no duplicates within this sheet.
-      const existingEmailSet = new Set();
+      const existingKeySet = new Set();
       try {
-        const { data } = await adminService.listTeachers();
-        const teachers = Array.isArray(data?.data) ? data.data : [];
+        const teacherRes = await adminService.listTeachers();
+        const teachers = Array.isArray(teacherRes?.data?.data) ? teacherRes.data.data : [];
         teachers.forEach((teacher) => {
-          const email = String(teacher?.email || "").trim().toLowerCase();
-          if (email) existingEmailSet.add(email);
+          const email = String(teacher?.email ?? "").trim().toLowerCase();
+          if (!email) return;
+          listTeacherAssignments(teacher).forEach((assignment) => {
+            existingKeySet.add(assignmentKey({ email, ...assignment }));
+          });
         });
       } catch {
-        // If teacher list fetch fails, continue with row validation and backend duplicate protection.
+        // If list API fails, still allow preview/upload based on sheet validation only.
       }
 
-      const seenUploadEmails = new Set();
-      const dedupedValidRows = [];
-      for (const row of validRows) {
-        const email = String(row.email || "").trim().toLowerCase();
-        if (!email) {
-          dedupedValidRows.push(row);
-          continue;
-        }
-        if (existingEmailSet.has(email)) {
+      const dedupeSeen = new Set(existingKeySet);
+      const finalValidRows = [];
+      validRows.forEach((row) => {
+        const key = assignmentKey(row);
+        if (dedupeSeen.has(key)) {
           invalidRows.push({
-            rowNumber: "—",
-            reason: `Email already exists: ${email}`,
+            rowNumber: row.__rowNumber,
+            reason: "This email is already linked with the same grade, channel, batch ID and batch name",
           });
-          continue;
+          return;
         }
-        if (seenUploadEmails.has(email)) {
-          invalidRows.push({
-            rowNumber: "—",
-            reason: `Duplicate email in uploaded file: ${email}`,
-          });
-          continue;
-        }
-        seenUploadEmails.add(email);
-        dedupedValidRows.push(row);
-      }
+        dedupeSeen.add(key);
+        finalValidRows.push(row);
+      });
 
       setBulkPreview({
         open: true,
         totalRows: rows.length,
-        validRows: dedupedValidRows,
+        validRows: finalValidRows,
         invalidRows,
       });
-      if (!dedupedValidRows.length) {
+      if (!finalValidRows.length) {
         pushToast({ title: "No valid teacher rows found. Review errors in preview.", variant: "error" });
       }
     } catch (error) {
@@ -281,7 +325,7 @@ export const AddTeacherPage = () => {
       <AdminPageHero
         eyebrow="Faculty onboarding"
         title="Add a teacher"
-        description="Create an instructor profile with grade and batch routing. A secure password is generated on submit and emailed automatically."
+        description="Add one assignment at a time (grade, channel, batch). Use the same email again later to add another batch with different details."
       >
         <span className="inline-flex items-center gap-2 rounded-full border border-[#FFFFFF]/25 bg-[#FFFFFF]/10 px-3 py-1.5 text-xs font-semibold text-[#8BBCEB]">
           <span className="h-2 w-2 rounded-full bg-[#25D366]" />
@@ -318,7 +362,7 @@ export const AddTeacherPage = () => {
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#1E73D8]">Add manually</p>
             <h2 className="mt-2 font-heading text-lg font-bold text-[#0B3C5D]">Single teacher form</h2>
             <p className="mt-2 text-xs font-medium leading-relaxed text-[#1E73D8]/90">
-              Use the form below to add one teacher at a time with grade, channel, batch ID, and batch name.
+              Each save adds one assignment. Submit again with the same email to add another grade, channel, or batch. Excel: one row per assignment (same email on multiple rows is allowed).
             </p>
           </div>
         </div>
@@ -345,84 +389,18 @@ export const AddTeacherPage = () => {
             onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
             required
           />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1">
-              <span className="text-sm font-semibold text-[#0B3C5D]">
-                Grade <span className="text-[#F4D35E]">*</span>
-              </span>
-              <select
-                className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
-                value={form.grade}
-                onBlur={() => touch("grade")}
-                onChange={(event) => setForm((prev) => ({ ...prev, grade: event.target.value }))}
-                required
-              >
-                <option value="">Select grade</option>
-                {GRADE_OPTIONS.map((gradeOption) => (
-                  <option key={gradeOption} value={gradeOption}>
-                    Grade {gradeOption}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.grade ? <p className="text-xs font-medium text-[#0B3C5D]">{fieldErrors.grade}</p> : null}
-            </label>
-            <label className="block space-y-1">
-              <span className="text-sm font-semibold text-[#0B3C5D]">
-                Display <span className="text-[#F4D35E]">*</span>
-              </span>
-              <select
-                className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
-                value={form.display}
-                onBlur={() => touch("display")}
-                onChange={(event) => setForm((prev) => ({ ...prev, display: event.target.value }))}
-                required
-              >
-                <option value="">Select display</option>
-                {TEACHER_DISPLAY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.display ? (
-                <p className="text-xs font-medium text-[#0B3C5D]">{fieldErrors.display}</p>
-              ) : null}
-            </label>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              tone="admin"
-              label="Batch ID"
-              value={form.batchId}
-              error={fieldErrors.batchId}
-              onBlur={() => touch("batchId")}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  batchId: event.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 80),
-                }))
-              }
-              required
-            />
-          </div>
-          <Input
-            tone="admin"
-            label="Batch name"
-            value={form.batchName}
-            maxLength={120}
-            error={fieldErrors.batchName}
-            onBlur={() => touch("batchName")}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                batchName: event.target.value.replace(/[^a-zA-Z0-9 ]/g, "").slice(0, 120),
-              }))
-            }
-            required
+          <TeacherSingleAssignmentFields
+            grade={form.grade}
+            display={form.display}
+            batchId={form.batchId}
+            batchName={form.batchName}
+            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+            errors={fieldErrors}
+            onTouch={touch}
           />
           <div className="pt-2">
             <Button type="submit" variant="adminPrimary" disabled={loading || bulkUploading} className="min-w-[200px]">
-              {loading ? <Loader label="Saving…" variant="admin" /> : "Create teacher account"}
+              {loading ? <Loader label="Saving…" variant="admin" /> : "Save teacher / assignment"}
             </Button>
           </div>
         </form>
@@ -473,8 +451,8 @@ export const AddTeacherPage = () => {
           {bulkPreview.invalidRows.length}
         </p>
         <p className="mt-2 text-xs font-medium text-[#1E73D8]/90">
-          Teacher Batch ID is stored as letters and numbers only (symbols removed from Excel). Batch name allows letters,
-          numbers, and spaces.
+          Each Excel row is one assignment. The same email can appear across multiple rows with different grade/channel/batch
+          combinations. Rows already linked in DB to the same assignment are marked invalid.
         </p>
         {bulkPreview.validRows.length ? (
           <div className="mt-4 overflow-x-auto rounded-xl border border-[#8BBCEB]/35">

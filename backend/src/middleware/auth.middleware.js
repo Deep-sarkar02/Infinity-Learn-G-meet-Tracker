@@ -4,6 +4,7 @@ const ApiError = require("../utils/ApiError");
 const getPrisma = require("../config/postgres");
 const logger = require("../config/logger");
 const { idOrLegacyWhere } = require("../utils/id");
+const { teacherBatchesInclude, shapeTeacherBatchesForApi } = require("../utils/teacherBatches");
 
 const prisma = env.databaseUrl ? getPrisma() : null;
 
@@ -38,9 +39,14 @@ const authMiddleware = async (req, _res, next) => {
           display: true,
           batchId: true,
           batchName: true,
+          ...teacherBatchesInclude,
         },
       });
       if (pgUser) {
+        const batchFields =
+          pgUser.role === "teacher"
+            ? shapeTeacherBatchesForApi(pgUser)
+            : { batches: [], batchId: pgUser.batchId, batchName: pgUser.batchName };
         user = {
           _id: pgUser.legacyMongoId || pgUser.id,
           id: pgUser.id,
@@ -49,8 +55,8 @@ const authMiddleware = async (req, _res, next) => {
           role: pgUser.role,
           grade: pgUser.grade,
           display: pgUser.display,
-          batchId: pgUser.batchId,
-          batchName: pgUser.batchName,
+          ...batchFields,
+          teacherBatches: pgUser.teacherBatches,
         };
       }
     }

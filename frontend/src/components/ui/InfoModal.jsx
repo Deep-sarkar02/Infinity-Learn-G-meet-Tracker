@@ -1,11 +1,15 @@
 import { useEffect } from "react";
 import { Button } from "./Button";
+import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
+import { renderModalPortal } from "./modalPortal";
 
 /**
  * Read-only modal with a single Close action (no confirm flow).
  * @param {{ tone?: 'default' | 'admin' }} props — admin uses strict MeetReserve admin palette only
  */
 export const InfoModal = ({ open, title, onClose, children, footer, tone = "default" }) => {
+  useBodyScrollLock(open);
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
@@ -17,12 +21,13 @@ export const InfoModal = ({ open, title, onClose, children, footer, tone = "defa
 
   const admin = tone === "admin";
 
-  return open ? (
+  return open
+    ? renderModalPortal(
     <div
       className={
         admin
-          ? "fixed inset-0 z-50 flex items-end justify-center bg-[#0B3C5D]/55 p-4 sm:items-center"
-          : "fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 sm:items-center"
+          ? "fixed inset-0 z-[200] flex items-end justify-center overflow-hidden bg-[#0B3C5D]/55 p-4 sm:items-center"
+          : "fixed inset-0 z-[200] flex items-end justify-center overflow-hidden bg-slate-900/50 p-4 sm:items-center"
       }
       role="dialog"
       aria-modal="true"
@@ -70,6 +75,7 @@ export const InfoModal = ({ open, title, onClose, children, footer, tone = "defa
           </div>
         ) : null}
       </div>
-    </div>
-  ) : null;
+    </div>,
+      )
+    : null;
 };

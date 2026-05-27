@@ -9,6 +9,7 @@ import { adminService } from "../../services/admin.service";
 import { useToast } from "../../hooks/useToast";
 import { AdminPageHero, AdminPanel } from "../../components/admin/AdminPageChrome";
 import { bookingStatusChipClassName, formatBookingStatusLabel } from "../../utils/bookingStatus";
+import { sanitizeBatchIdInput } from "../../utils/batchFields";
 
 const PAGE_SIZE = 20;
 
@@ -132,7 +133,7 @@ export const AllBookingsPage = () => {
     try {
       const params = { page, limit: PAGE_SIZE };
       if (gradeFilter) params.grade = gradeFilter;
-      const batchTrim = batchIdFilter.replace(/[^a-zA-Z0-9]/g, "").trim();
+      const batchTrim = sanitizeBatchIdInput(batchIdFilter).trim();
       if (batchTrim) params.batchId = batchTrim;
       if (statusFilter) params.status = statusFilter;
       const { data } = await adminService.listBookings(params);
@@ -171,7 +172,7 @@ export const AllBookingsPage = () => {
 
   useEffect(() => {
     if (loading || !rows.length) return;
-    const filterKey = `${gradeFilter}|${batchIdFilter.replace(/[^a-zA-Z0-9]/g, "").trim()}`;
+    const filterKey = `${gradeFilter}|${sanitizeBatchIdInput(batchIdFilter).trim()}`;
     const hasStaleBothMissing = rows.some(
       (r) => !r.recordingUrl && !r.transcriptUrl && isPastArtifactDeadline(r.endTime),
     );
@@ -229,7 +230,7 @@ export const AllBookingsPage = () => {
               value={batchIdFilter}
               maxLength={80}
               onChange={(e) => {
-                const v = e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 80);
+                const v = sanitizeBatchIdInput(e.target.value);
                 setBatchIdFilter(v);
               }}
             />
@@ -265,14 +266,14 @@ export const AllBookingsPage = () => {
             tone="admin"
             title={
               gradeFilter ||
-              batchIdFilter.replace(/[^a-zA-Z0-9]/g, "").trim() ||
+              sanitizeBatchIdInput(batchIdFilter).trim() ||
               statusFilter
                 ? "No bookings match these filters"
                 : "No bookings yet"
             }
             description={
               gradeFilter ||
-              batchIdFilter.replace(/[^a-zA-Z0-9]/g, "").trim() ||
+              sanitizeBatchIdInput(batchIdFilter).trim() ||
               statusFilter
                 ? "Clear grade, batch ID, or status — data refreshes automatically when filters change."
                 : "Bookings appear here after students or roster learners reserve available slots."
