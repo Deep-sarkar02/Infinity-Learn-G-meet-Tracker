@@ -11,6 +11,8 @@ const {
 
 const router = express.Router();
 
+router.get("/booking-window", asyncHandler(publicController.getBookingWindow));
+
 router.post(
   "/students/lookup",
   validate(lookupStudentSchema),

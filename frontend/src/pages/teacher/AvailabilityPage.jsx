@@ -17,10 +17,10 @@ import {
 } from "../../utils/date";
 
 const DATE_SUFFIX = "T00:00:00.000Z";
-const CUSTOM_DEFAULT_SLOT = { startTime: "09:00", endTime: "09:30" };
-const STEP_MINUTES = 30;
+const CUSTOM_DEFAULT_SLOT = { startTime: "09:00", endTime: "09:15" };
+const STEP_MINUTES = 15;
 const QUICK_START_MINUTES = 9 * 60;
-const QUICK_LAST_START_MINUTES = 19 * 60 + 30;
+const QUICK_LAST_START_MINUTES = 19 * 60 + 45;
 
 const istCalendarParts = (date) => {
   const wd = new Intl.DateTimeFormat("en-US", {

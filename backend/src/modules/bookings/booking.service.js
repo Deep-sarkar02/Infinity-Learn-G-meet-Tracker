@@ -645,7 +645,7 @@ const getBookingDashboardStats = async (month) => {
   const rows = await prisma.booking.findMany({
     where: {
       ...where,
-      status: { in: ["scheduled", "cancelled"] },
+      status: { in: ["scheduled", "cancelled", "completed"] },
     },
     include: {
       rosterStudent: { select: { grade: true, batchId: true, batchName: true } },
@@ -655,7 +655,8 @@ const getBookingDashboardStats = async (month) => {
   });
 
   const scheduled = rows.filter((row) => row.status === "scheduled");
-  const cancelledTotal = rows.length - scheduled.length;
+  const completedTotal = rows.filter((row) => row.status === "completed").length;
+  const cancelledTotal = rows.filter((row) => row.status === "cancelled").length;
 
   const byGradeMap = new Map();
   const byBatchMap = new Map();
@@ -684,6 +685,7 @@ const getBookingDashboardStats = async (month) => {
   );
   return {
     scheduledTotal: scheduled.length,
+    completedTotal,
     cancelledTotal,
     month: monthWindow?.month ?? null,
     byGrade,

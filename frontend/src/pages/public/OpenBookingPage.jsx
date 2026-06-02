@@ -8,7 +8,7 @@ import { InfoModal } from "../../components/ui/InfoModal";
 import { BookingHero, BookingNotice, BookingPanel } from "../../components/public/BookingPageChrome";
 import { publicBookingService } from "../../services/public.service";
 import { useToast } from "../../hooks/useToast";
-import { nextDays, toDateLabel, toIsoDate, toTimeLabel } from "../../utils/date";
+import { getKolkataYmd, nextKolkataDays, toDateLabel, toIsoDate, toTimeLabel } from "../../utils/date";
 import { bookingStatusChipClassName, formatBookingStatusLabel } from "../../utils/bookingStatus";
 import { isValidContactEmail, validateLookupForm } from "../../utils/validators";
 import { cn } from "../../utils/cn";
@@ -66,7 +66,8 @@ export const OpenBookingPage = () => {
   const [roster, setRoster] = useState(null);
   const [contactEmail, setContactEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(toIsoDate(new Date()));
+  const [bookingWindowDays, setBookingWindowDays] = useState(7);
+  const [selectedDate, setSelectedDate] = useState(() => `${getKolkataYmd()}T00:00:00.000Z`);
   const [openData, setOpenData] = useState(null);
   const [lookupErrors, setLookupErrors] = useState({});
   const [slotReleasedBanner, setSlotReleasedBanner] = useState(false);
@@ -82,7 +83,37 @@ export const OpenBookingPage = () => {
   const rescheduleNoticeShownRef = useRef(false);
   const prevHadBookingRef = useRef(null);
 
-  const days = useMemo(() => nextDays(14), []);
+  const days = useMemo(
+    () => nextKolkataDays(Math.max(Number(bookingWindowDays) || 7, 1)),
+    [bookingWindowDays],
+  );
+
+  useEffect(() => {
+    let active = true;
+    const loadWindow = async () => {
+      try {
+        const { data } = await publicBookingService.getBookingWindow();
+        const nextDays = Number(data.data?.bookingWindowDays);
+        if (active && Number.isFinite(nextDays) && nextDays >= 1) {
+          setBookingWindowDays(nextDays);
+        }
+      } catch {
+        /* keep default window */
+      }
+    };
+    void loadWindow();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!days.length) return;
+    const valid = days.some((day) => toIsoDate(day) === selectedDate);
+    if (!valid) {
+      setSelectedDate(toIsoDate(days[0]));
+    }
+  }, [days, selectedDate]);
 
   const loadSlots = useCallback(
     async (rosterStudentId, date) => {
@@ -308,7 +339,7 @@ export const OpenBookingPage = () => {
         >
           <span className="inline-flex items-center gap-2 rounded-full border border-[#FFFFFF]/25 bg-[#FFFFFF]/10 px-3 py-1.5 text-xs font-semibold text-[#8BBCEB]">
             <FiCalendar className="h-4 w-4" />
-            14-day horizon
+            {bookingWindowDays}-day booking window
           </span>
         </BookingHero>
 

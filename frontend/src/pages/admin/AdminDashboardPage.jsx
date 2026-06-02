@@ -190,6 +190,7 @@ export const AdminDashboardPage = () => {
   }
 
   const total = stats?.scheduledTotal ?? 0;
+  const completedTotal = stats?.completedTotal ?? 0;
   const cancelledTotal = stats?.cancelledTotal ?? 0;
   const gradeCount = gradeRows.length;
   const batchCount = batchRows.length;
@@ -265,12 +266,18 @@ export const AdminDashboardPage = () => {
         </div>
       </section>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <KpiTile
           label="Meetings scheduled"
           value={total}
           hint="Status = scheduled"
           accent="bg-[#1E73D8]"
+        />
+        <KpiTile
+          label="Completed bookings"
+          value={completedTotal}
+          hint="Status = completed (selected month)"
+          accent="bg-[#25D366]"
         />
         <KpiTile
           label="Grade segments"

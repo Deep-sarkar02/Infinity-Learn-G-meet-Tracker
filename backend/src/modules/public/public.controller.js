@@ -1,6 +1,11 @@
 const publicService = require("./public.service");
 const bookingService = require("../bookings/booking.service");
 
+const getBookingWindow = async (_req, res) => {
+  const data = await publicService.getBookingWindow();
+  res.status(200).json({ success: true, data });
+};
+
 const lookupStudent = async (req, res) => {
   const data = await publicService.lookupStudent(req.body);
   res.status(200).json({ success: true, data });
@@ -41,6 +46,7 @@ const listOpenBookings = async (req, res) => {
 };
 
 module.exports = {
+  getBookingWindow,
   lookupStudent,
   getOpenSlots,
   bookOpenSlot,

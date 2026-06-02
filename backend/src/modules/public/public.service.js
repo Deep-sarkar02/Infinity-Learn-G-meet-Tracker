@@ -33,6 +33,11 @@ const withMongoLikeId = (record) => {
   };
 };
 
+const getBookingWindow = async () => {
+  const bookingWindowDays = await adminService.getBookingWindowDays();
+  return { bookingWindowDays };
+};
+
 const lookupStudent = async ({ mobile }) => {
   const students = await rosterService.findByMobile(mobile);
   return {
@@ -220,6 +225,7 @@ const getOpenSlots = async ({ rosterStudentId, date }) => {
 };
 
 module.exports = {
+  getBookingWindow,
   lookupStudent,
   getOpenSlots,
 };
