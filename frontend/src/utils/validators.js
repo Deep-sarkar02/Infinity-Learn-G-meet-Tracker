@@ -20,6 +20,7 @@ export const ROSTER_DISPLAY_OPTIONS = [
   "HOPTS CHAMP",
   "EEP",
   "NEET",
+  "JEE",
   "FOUNDATION",
   "Jammu & Kashmir",
   "Tamil Nadu State Board",
