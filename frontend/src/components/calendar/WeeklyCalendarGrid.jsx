@@ -324,6 +324,11 @@ export const WeeklyCalendarGrid = ({
                                         Student
                                       </p>
                                       <p className="mt-1 font-bold text-[#0B3C5D]">{booking.learnerName}</p>
+                                      {booking.learnerUserId ? (
+                                        <p className="font-medium text-[#1E73D8]/90">
+                                          User ID: {booking.learnerUserId}
+                                        </p>
+                                      ) : null}
                                       {booking.learnerGrade != null ? (
                                         <p className="font-medium text-[#1E73D8]/90">Grade {booking.learnerGrade}</p>
                                       ) : null}

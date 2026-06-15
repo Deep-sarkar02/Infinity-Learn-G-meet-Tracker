@@ -112,12 +112,13 @@ export const TeacherBookingHistoryPage = () => {
           />
         ) : (
           <div className="overflow-x-auto rounded-xl border border-[#8BBCEB]/30">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[820px] text-left text-sm">
               <thead>
                 <tr className="border-b border-[#8BBCEB]/40 bg-[#F5F5F5] text-[11px] uppercase tracking-wide text-[#0B3C5D]">
                   <th className="px-3 py-3 font-bold">When (IST)</th>
                   <th className="px-3 py-3 font-bold">Status</th>
                   <th className="px-3 py-3 font-bold">Learner</th>
+                  <th className="px-3 py-3 font-bold">User ID</th>
                   <th className="px-3 py-3 font-bold">Grade</th>
                   <th className="px-3 py-3 font-bold">Channel</th>
                   <th className="px-3 py-3 font-bold">Contact</th>
@@ -142,6 +143,7 @@ export const TeacherBookingHistoryPage = () => {
                       </span>
                     </td>
                     <td className="px-3 py-3 align-top font-semibold text-[#0B3C5D]">{row.learnerName}</td>
+                    <td className="px-3 py-3 align-top font-medium text-[#0B3C5D]/90">{row.learnerUserId || "—"}</td>
                     <td className="px-3 py-3 align-top text-[#1E73D8]">{row.learnerGrade ?? "—"}</td>
                     <td className="px-3 py-3 align-top capitalize text-[#1E73D8]/90">{row.bookingKind || "—"}</td>
                     <td className="px-3 py-3 align-top text-xs text-[#0B3C5D]/90">

@@ -913,6 +913,7 @@ const serializeTeacherBooking = (b) => {
     endTime: b.endTime,
     date: b.date,
     learnerName,
+    learnerUserId: roster?.userId ?? null,
     learnerGrade: roster?.grade ?? student?.grade ?? null,
     learnerBatchId: roster?.batchId ?? null,
     learnerBatchName: roster?.batchName ?? null,
@@ -934,7 +935,7 @@ const listTeacherPendingCompletion = async (teacherId) => {
       endTime: { lt: new Date() },
     },
     include: {
-      rosterStudent: { select: { id: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
+      rosterStudent: { select: { id: true, userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
       student: { select: { id: true, name: true, email: true, grade: true } },
     },
     orderBy: { endTime: "asc" },
@@ -974,7 +975,7 @@ const completeBookingByTeacher = async (teacherId, bookingId, outcome = "complet
     where: { id: row.id },
     data: { status: outcome },
     include: {
-      rosterStudent: { select: { id: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
+      rosterStudent: { select: { id: true, userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
       student: { select: { id: true, name: true, email: true, grade: true } },
     },
   });
@@ -993,7 +994,7 @@ const listTeacherBookingHistory = async (teacherId, window = "week") => {
           startTime: { gte: from, lte: to },
         },
         include: {
-          rosterStudent: { select: { id: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
+          rosterStudent: { select: { id: true, userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
           student: { select: { id: true, name: true, email: true, grade: true } },
         },
         orderBy: { startTime: "desc" },
@@ -1122,7 +1123,7 @@ const cancelBookingByTeacher = async (teacherId, bookingId, { reason } = {}) => 
     where: { AND: [bookingLookup, { teacherId: teacherPgId }] },
     include: {
       student: { select: { email: true } },
-      rosterStudent: { select: { id: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
+      rosterStudent: { select: { id: true, userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
     },
   });
   if (!row) {
@@ -1159,7 +1160,7 @@ const cancelBookingByTeacher = async (teacherId, bookingId, { reason } = {}) => 
   const updated = await prisma.booking.findUnique({
     where: { id: row.id },
     include: {
-      rosterStudent: { select: { id: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
+      rosterStudent: { select: { id: true, userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
       student: { select: { id: true, name: true, email: true, grade: true } },
     },
   });
@@ -1341,7 +1342,7 @@ const rescheduleBookingByTeacher = async (teacherId, bookingId, { availabilityId
     const full = await prisma.booking.findUnique({
       where: { id: booking.id },
       include: {
-        rosterStudent: { select: { id: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
+        rosterStudent: { select: { id: true, userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
         student: { select: { id: true, name: true, email: true, grade: true } },
       },
     });

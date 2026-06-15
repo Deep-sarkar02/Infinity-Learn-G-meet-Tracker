@@ -313,6 +313,7 @@ const bookingToSlotPayload = (slot, b) => {
       rescheduledAt: b.rescheduledAt ?? null,
       cancellationReason: b.cancellationReason ?? null,
       learnerName,
+      learnerUserId: roster?.userId ?? null,
       learnerGrade: roster?.grade ?? student?.grade ?? null,
       learnerBatchId: roster?.batchId ?? null,
       learnerBatchName: roster?.batchName ?? null,
@@ -385,7 +386,7 @@ const getTeacherCalendar = async (teacherId, query) => {
       },
     },
     include: {
-      rosterStudent: { select: { name: true, grade: true, batchId: true, batchName: true, mobile: true } },
+      rosterStudent: { select: { userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
       student: { select: { name: true, email: true, grade: true } },
     },
   });
