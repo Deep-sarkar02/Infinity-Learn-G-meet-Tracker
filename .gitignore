@@ -20,3 +20,5 @@ Thumbs.db
 .postman/
 postman/
 docs/
+!backend/src/docs/
+!backend/src/docs/**
