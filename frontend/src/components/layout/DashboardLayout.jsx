@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion as M, useReducedMotion } from "framer-motion";
 import { useAuthStore } from "../../models/auth.store";
@@ -10,7 +10,7 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { TeacherSideNav } from "./teacher/TeacherSideNav";
 import { TeacherTopBar } from "./teacher/TeacherTopBar";
-import { TeacherRoutingBar } from "./teacher/TeacherRoutingBar";
+import { TeacherMobileNav } from "./teacher/TeacherMobileNav";
 import { TeacherCompletionGate } from "../teacher/TeacherCompletionGate";
 
 const DashboardOutlet = () => {
@@ -34,8 +34,14 @@ const DashboardOutlet = () => {
 
 export const DashboardLayout = () => {
   const { user, setUser } = useAuthStore();
+  const location = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isTeacher = user?.role === "teacher";
   const isAdmin = user?.role === "admin";
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!isAdmin) return undefined;
@@ -96,14 +102,14 @@ export const DashboardLayout = () => {
     return (
       <div className={cn("app-shell teacher-app teacher-app--figma flex min-h-screen flex-col")}>
         <TeacherCompletionGate />
-        <TeacherTopBar />
-        <TeacherRoutingBar />
+        <TeacherTopBar onOpenNav={() => setMobileNavOpen(true)} />
         <div className="flex min-h-0 flex-1">
           <TeacherSideNav />
-          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">
+          <main className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5 md:py-5">
             <DashboardOutlet />
           </main>
         </div>
+        <TeacherMobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       </div>
     );
   }

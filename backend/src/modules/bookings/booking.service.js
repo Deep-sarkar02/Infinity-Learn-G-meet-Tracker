@@ -506,6 +506,28 @@ const mapAdminBookingItemFromPrisma = (row) => {
   };
 };
 
+const adminBookingMatchesSearch = (item, queryLower) => {
+  const haystack = [
+    item._id,
+    item.learnerName,
+    item.learnerGrade,
+    item.contactEmail,
+    item.teacherName,
+    item.teacherEmail,
+    item.teacherGrade,
+    item.batchId,
+    item.batchName,
+    item.bookingKind,
+    item.status,
+    item.meetingLink,
+    item.googleCalendarEventId,
+  ]
+    .filter((v) => v != null && String(v).trim() !== "")
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(queryLower);
+};
+
 const getSegmentForAdminBooking = (item) => {
   if (item.bookingKind === "student") {
     return {
@@ -530,7 +552,11 @@ const listAllForAdmin = async ({
   bookingKind,
   segmentKey,
   month,
+  fromYmd,
+  toYmd,
   status,
+  teacherId,
+  search,
   page: pageRaw,
   limit: limitRaw,
 } = {}) => {
@@ -569,13 +595,31 @@ const listAllForAdmin = async ({
       ? String(status).trim()
       : null;
 
+  const teacherTrim =
+    teacherId !== undefined && teacherId !== null && String(teacherId).trim() !== ""
+      ? String(teacherId).trim()
+      : null;
+  const searchTrim =
+    search !== undefined && search !== null && String(search).trim() !== ""
+      ? String(search).trim().toLowerCase()
+      : null;
+
   assertPrisma();
   const where = {};
-  if (monthWindow) {
+  const ymdRange = resolveIstYmdRange(fromYmd, toYmd);
+  if (ymdRange) {
+    where.startTime = { gte: ymdRange.from, lte: ymdRange.to };
+  } else if (monthWindow) {
     where.startTime = { gte: monthWindow.from, lte: monthWindow.to };
   }
   if (statusTrim && ADMIN_LIST_STATUS.has(statusTrim)) {
     where.status = statusTrim;
+  }
+  if (teacherTrim) {
+    const teacherPgId = await resolveUserIdForPrisma(teacherTrim, "teacher");
+    if (teacherPgId) {
+      where.teacherId = teacherPgId;
+    }
   }
   const rows = await prisma.booking.findMany({
     where,
@@ -610,6 +654,10 @@ const listAllForAdmin = async ({
     if (kindTrim === "student" || kindTrim === "roster") {
       items = items.filter((item) => item.bookingKind === kindTrim);
     }
+  }
+
+  if (searchTrim) {
+    items = items.filter((item) => adminBookingMatchesSearch(item, searchTrim));
   }
 
   const total = items.length;
@@ -690,6 +738,453 @@ const getBookingDashboardStats = async (month) => {
     month: monthWindow?.month ?? null,
     byGrade,
     byBatch,
+  };
+};
+
+const resolveMonthWindowForStats = (monthYyyyMm) => {
+  const window = getIstMonthWindow(monthYyyyMm);
+  if (window) return window;
+  const ymd = getYmdInIst(new Date());
+  const [y, m] = ymd.split("-");
+  return getIstMonthWindow(`${y}-${m}`);
+};
+
+const pad2Ymd = (n) => String(n).padStart(2, "0");
+
+/** Split an IST calendar month into consecutive 7-day buckets (last week may be shorter). */
+const getIstMonthWeekWindows = (monthYyyyMm) => {
+  const monthWindow = resolveMonthWindowForStats(monthYyyyMm);
+  const { month } = monthWindow;
+  const lastDay = Number(getYmdInIst(monthWindow.to).split("-")[2]);
+  const weeks = [];
+  for (let startDay = 1; startDay <= lastDay; startDay += 7) {
+    const endDay = Math.min(startDay + 6, lastDay);
+    const fromYmd = `${month}-${pad2Ymd(startDay)}`;
+    const toYmd = `${month}-${pad2Ymd(endDay)}`;
+    weeks.push({
+      week: weeks.length + 1,
+      from: new Date(`${fromYmd}T00:00:00${IST_OFFSET}`),
+      to: new Date(`${toYmd}T23:59:59.999${IST_OFFSET}`),
+      fromYmd,
+      toYmd,
+      label: `${fromYmd} — ${toYmd}`,
+    });
+  }
+  return { month, monthWindow, weeks };
+};
+
+const resolveIstYmdRange = (fromYmd, toYmd) => {
+  const fromStr = String(fromYmd ?? "").trim();
+  const toStr = String(toYmd ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+    return null;
+  }
+  const from = new Date(`${fromStr}T00:00:00${IST_OFFSET}`);
+  const to = new Date(`${toStr}T23:59:59.999${IST_OFFSET}`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
+    return null;
+  }
+  return { from, to, fromYmd: fromStr, toYmd: toStr };
+};
+
+const emptyTeacherSlotRow = (teacherId, teacherName, teacherEmail) => ({
+  teacherId,
+  teacherName,
+  teacherEmail,
+  slotsOffered: 0,
+  slotsBooked: 0,
+  slotsUnbooked: 0,
+  bookingRatePercent: 0,
+  scheduled: 0,
+  completed: 0,
+  cancelled: 0,
+  studentDidNotJoin: 0,
+  teacherDidNotJoin: 0,
+  bookedSlotIds: new Set(),
+});
+
+const finalizeTeacherSlotRow = (row) => {
+  const slotsBooked = row.bookedSlotIds.size;
+  const slotsUnbooked = Math.max(0, row.slotsOffered - slotsBooked);
+  const bookingRatePercent =
+    row.slotsOffered > 0 ? Math.round((slotsBooked / row.slotsOffered) * 100) : 0;
+  return {
+    teacherId: row.teacherId,
+    teacherName: row.teacherName,
+    teacherEmail: row.teacherEmail,
+    slotsOffered: row.slotsOffered,
+    slotsBooked,
+    slotsUnbooked,
+    bookingRatePercent,
+    scheduled: row.scheduled,
+    completed: row.completed,
+    cancelled: row.cancelled,
+    studentDidNotJoin: row.studentDidNotJoin,
+    teacherDidNotJoin: row.teacherDidNotJoin,
+  };
+};
+
+/**
+ * Monthly mentor slot utilization — slots offered vs booked and no-show outcomes (IST month or week).
+ */
+const getMentorSlotMonthlyStats = async (monthYyyyMm, weekNum) => {
+  assertPrisma();
+  const { month, week, from, to, fromYmd, toYmd, weeks } = resolveSlotStatsWindow(
+    monthYyyyMm,
+    weekNum,
+  );
+
+  const [slots, bookings] = await Promise.all([
+    prisma.availabilitySlot.findMany({
+      where: { startTime: { gte: from, lte: to } },
+      select: {
+        id: true,
+        availability: {
+          select: {
+            teacherId: true,
+            teacher: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
+    }),
+    prisma.booking.findMany({
+      where: { startTime: { gte: from, lte: to } },
+      select: {
+        slotId: true,
+        teacherId: true,
+        status: true,
+        teacher: { select: { name: true, email: true } },
+      },
+    }),
+  ]);
+
+  const byTeacherMap = new Map();
+  for (const slot of slots) {
+    const teacherId = slot.availability.teacherId;
+    const teacher = slot.availability.teacher;
+    if (!byTeacherMap.has(teacherId)) {
+      byTeacherMap.set(
+        teacherId,
+        emptyTeacherSlotRow(teacherId, teacher?.name ?? "Unknown", teacher?.email ?? ""),
+      );
+    }
+    byTeacherMap.get(teacherId).slotsOffered += 1;
+  }
+
+  const bookedSlotIdsGlobal = new Set();
+  const totals = {
+    slotsOffered: slots.length,
+    slotsBooked: 0,
+    slotsUnbooked: 0,
+    bookingRatePercent: 0,
+    scheduled: 0,
+    completed: 0,
+    cancelled: 0,
+    studentDidNotJoin: 0,
+    teacherDidNotJoin: 0,
+  };
+
+  for (const booking of bookings) {
+    const teacherId = booking.teacherId;
+    if (!byTeacherMap.has(teacherId)) {
+      byTeacherMap.set(
+        teacherId,
+        emptyTeacherSlotRow(
+          teacherId,
+          booking.teacher?.name ?? "Unknown",
+          booking.teacher?.email ?? "",
+        ),
+      );
+    }
+    const row = byTeacherMap.get(teacherId);
+    const { status } = booking;
+
+    if (status === "cancelled") {
+      totals.cancelled += 1;
+      row.cancelled += 1;
+      continue;
+    }
+
+    if (booking.slotId) {
+      row.bookedSlotIds.add(String(booking.slotId));
+      bookedSlotIdsGlobal.add(String(booking.slotId));
+    }
+
+    if (status === "scheduled") {
+      totals.scheduled += 1;
+      row.scheduled += 1;
+    } else if (status === "completed") {
+      totals.completed += 1;
+      row.completed += 1;
+    } else if (status === "student_did_not_join") {
+      totals.studentDidNotJoin += 1;
+      row.studentDidNotJoin += 1;
+    } else if (status === "teacher_did_not_join") {
+      totals.teacherDidNotJoin += 1;
+      row.teacherDidNotJoin += 1;
+    }
+  }
+
+  totals.slotsBooked = bookedSlotIdsGlobal.size;
+  totals.slotsUnbooked = Math.max(0, totals.slotsOffered - totals.slotsBooked);
+  totals.bookingRatePercent =
+    totals.slotsOffered > 0 ? Math.round((totals.slotsBooked / totals.slotsOffered) * 100) : 0;
+
+  const byTeacher = [...byTeacherMap.values()]
+    .map(finalizeTeacherSlotRow)
+    .sort((a, b) => b.slotsOffered - a.slotsOffered || b.slotsBooked - a.slotsBooked);
+
+  return {
+    month,
+    week: week ?? null,
+    weeksInMonth: weeks.map((w) => ({
+      week: w.week,
+      fromYmd: w.fromYmd,
+      toYmd: w.toYmd,
+      label: w.label,
+    })),
+    fromYmd,
+    toYmd,
+    totals,
+    byTeacher,
+  };
+};
+
+const resolveSlotStatsWindow = (monthYyyyMm, weekNum) => {
+  const { month, monthWindow, weeks } = getIstMonthWeekWindows(monthYyyyMm);
+  const weekParsed =
+    weekNum !== undefined && weekNum !== null && String(weekNum).trim() !== ""
+      ? Number.parseInt(String(weekNum), 10)
+      : null;
+  const weekWindow =
+    weekParsed != null && weekParsed >= 1 && weekParsed <= weeks.length
+      ? weeks[weekParsed - 1]
+      : null;
+  const window = weekWindow ?? monthWindow;
+  return { month, week: weekWindow?.week ?? null, weeks, ...window };
+};
+
+const summarizeTeacherSlotData = (slots, bookings, teacherRow) => {
+  const row = teacherRow ?? emptyTeacherSlotRow("", "Unknown", "");
+  for (const slot of slots) {
+    row.slotsOffered += 1;
+  }
+  const bookedSlotIds = new Set();
+  for (const booking of bookings) {
+    const { status } = booking;
+    if (status === "cancelled") {
+      row.cancelled += 1;
+      continue;
+    }
+    if (booking.slotId) bookedSlotIds.add(String(booking.slotId));
+    if (status === "scheduled") row.scheduled += 1;
+    else if (status === "completed") row.completed += 1;
+    else if (status === "student_did_not_join") row.studentDidNotJoin += 1;
+    else if (status === "teacher_did_not_join") row.teacherDidNotJoin += 1;
+  }
+  row.bookedSlotIds = bookedSlotIds;
+  return finalizeTeacherSlotRow(row);
+};
+
+/**
+ * Detailed mentor slot + booking report for PDF export (IST month or week).
+ */
+const getMentorSlotReportForTeacher = async (teacherId, monthYyyyMm, weekNum) => {
+  assertPrisma();
+  const teacherPgId = await resolveUserIdForPrisma(teacherId, "teacher");
+  if (!teacherPgId) {
+    throw new ApiError(404, "Teacher not found");
+  }
+
+  const teacher = await prisma.user.findUnique({
+    where: { id: teacherPgId },
+    select: { id: true, name: true, email: true },
+  });
+  if (!teacher) {
+    throw new ApiError(404, "Teacher not found");
+  }
+
+  const { month, week, from, to, fromYmd, toYmd } = resolveSlotStatsWindow(monthYyyyMm, weekNum);
+
+  const [slots, bookings] = await Promise.all([
+    prisma.availabilitySlot.findMany({
+      where: {
+        startTime: { gte: from, lte: to },
+        availability: { teacherId: teacherPgId },
+      },
+      select: {
+        id: true,
+        startTime: true,
+        endTime: true,
+        isBooked: true,
+        booking: { select: { id: true, status: true } },
+      },
+      orderBy: { startTime: "asc" },
+    }),
+    prisma.booking.findMany({
+      where: {
+        teacherId: teacherPgId,
+        startTime: { gte: from, lte: to },
+      },
+      orderBy: { startTime: "asc" },
+      include: {
+        teacher: { select: { name: true, email: true, grade: true } },
+        rosterStudent: { select: { name: true, grade: true, batchId: true, batchName: true } },
+        student: { select: { name: true, grade: true } },
+      },
+    }),
+  ]);
+
+  const summary = summarizeTeacherSlotData(
+    slots,
+    bookings,
+    emptyTeacherSlotRow(teacher.id, teacher.name, teacher.email ?? ""),
+  );
+
+  const slotItems = slots.map((slot) => ({
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    isBooked: slot.isBooked,
+    bookingStatus: slot.booking?.status ?? null,
+  }));
+
+  const bookingItems = bookings.map(mapAdminBookingItemFromPrisma);
+
+  return {
+    mentor: {
+      teacherId: teacher.id,
+      teacherName: teacher.name,
+      teacherEmail: teacher.email ?? "",
+    },
+    month,
+    week,
+    fromYmd,
+    toYmd,
+    summary,
+    slots: slotItems,
+    bookings: bookingItems,
+  };
+};
+
+const getIstTodayWindow = () => {
+  const dateYmd = getYmdInIst(new Date());
+  const from = new Date(`${dateYmd}T00:00:00${IST_OFFSET}`);
+  const to = new Date(`${dateYmd}T23:59:59.999${IST_OFFSET}`);
+  return { from, to, dateYmd };
+};
+
+const liveSlotStatusForToday = (slot, bookedSlotIds) => {
+  const id = String(slot.id);
+  if (bookedSlotIds.has(id)) {
+    return slot.booking?.status ?? (slot.isBooked ? "scheduled" : "booked");
+  }
+  return "open";
+};
+
+/**
+ * Live IST today — slots offered vs booked per teacher (session start times today).
+ */
+const getTeachersTodaySlotStats = async () => {
+  assertPrisma();
+  const { from, to, dateYmd } = getIstTodayWindow();
+
+  const [slots, bookings] = await Promise.all([
+    prisma.availabilitySlot.findMany({
+      where: { startTime: { gte: from, lte: to } },
+      select: {
+        id: true,
+        startTime: true,
+        endTime: true,
+        isBooked: true,
+        booking: { select: { status: true } },
+        availability: {
+          select: {
+            teacherId: true,
+            teacher: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
+      orderBy: { startTime: "asc" },
+    }),
+    prisma.booking.findMany({
+      where: {
+        startTime: { gte: from, lte: to },
+        status: { not: "cancelled" },
+      },
+      select: {
+        slotId: true,
+        teacherId: true,
+        teacher: { select: { id: true, name: true, email: true } },
+      },
+    }),
+  ]);
+
+  const bookedSlotIdsByTeacher = new Map();
+  for (const booking of bookings) {
+    if (!booking.slotId) continue;
+    const key = booking.teacherId;
+    if (!bookedSlotIdsByTeacher.has(key)) {
+      bookedSlotIdsByTeacher.set(key, new Set());
+    }
+    bookedSlotIdsByTeacher.get(key).add(String(booking.slotId));
+  }
+
+  const byTeacherMap = new Map();
+  for (const slot of slots) {
+    const teacherId = slot.availability.teacherId;
+    const teacher = slot.availability.teacher;
+    if (!byTeacherMap.has(teacherId)) {
+      byTeacherMap.set(teacherId, {
+        teacherId,
+        teacherName: teacher?.name ?? "Unknown",
+        teacherEmail: teacher?.email ?? "",
+        slots: [],
+        bookedSlotIds: bookedSlotIdsByTeacher.get(teacherId) ?? new Set(),
+      });
+    }
+    const row = byTeacherMap.get(teacherId);
+    row.slots.push({
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      status: liveSlotStatusForToday(slot, row.bookedSlotIds),
+    });
+  }
+
+  for (const booking of bookings) {
+    if (!booking.teacherId || byTeacherMap.has(booking.teacherId)) continue;
+    byTeacherMap.set(booking.teacherId, {
+      teacherId: booking.teacherId,
+      teacherName: booking.teacher?.name ?? "Unknown",
+      teacherEmail: booking.teacher?.email ?? "",
+      slots: [],
+      bookedSlotIds: bookedSlotIdsByTeacher.get(booking.teacherId) ?? new Set(),
+    });
+  }
+
+  const byTeacher = [...byTeacherMap.values()]
+    .map((row) => {
+      const slotsBooked = row.bookedSlotIds.size;
+      const slotsOffered = row.slots.length;
+      return {
+        teacherId: row.teacherId,
+        teacherName: row.teacherName,
+        teacherEmail: row.teacherEmail,
+        slotsOffered,
+        slotsBooked,
+        slotsUnbooked: Math.max(0, slotsOffered - slotsBooked),
+        slots: row.slots,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.slotsOffered - a.slotsOffered ||
+        String(a.teacherName).localeCompare(String(b.teacherName)),
+    );
+
+  return {
+    dateYmd,
+    generatedAt: new Date().toISOString(),
+    byTeacher,
   };
 };
 
@@ -873,6 +1368,9 @@ const getBookingWeekdayStats = async ({ days: calendarDays = 28, month } = {}) =
 };
 
 const getTeacherHistoryTimeRange = (window) => {
+  if (window === "all") {
+    return { from: null, to: null };
+  }
   const now = new Date();
   if (window === "month") {
     const ymd = getYmdInIst(now);
@@ -982,16 +1480,18 @@ const completeBookingByTeacher = async (teacherId, bookingId, outcome = "complet
   return mapPrismaBookingToMongoLike(updated);
 };
 
-const listTeacherBookingHistory = async (teacherId, window = "week") => {
+const listTeacherBookingHistory = async (teacherId, window = "all") => {
   assertPrisma();
-  const w = window === "month" ? "month" : "week";
+  const w = window === "month" || window === "week" ? window : "all";
   const { from, to } = getTeacherHistoryTimeRange(w);
   const teacherPgId = await resolveUserIdForPrisma(teacherId, "teacher");
+  const timeFilter =
+    from && to ? { startTime: { gte: from, lte: to } } : {};
   const rows = teacherPgId
     ? await prisma.booking.findMany({
         where: {
           teacherId: teacherPgId,
-          startTime: { gte: from, lte: to },
+          ...timeFilter,
         },
         include: {
           rosterStudent: { select: { id: true, userId: true, name: true, grade: true, batchId: true, batchName: true, mobile: true } },
@@ -1002,8 +1502,8 @@ const listTeacherBookingHistory = async (teacherId, window = "week") => {
     : [];
   return {
     window: w,
-    from: from.toISOString(),
-    to: to.toISOString(),
+    from: from ? from.toISOString() : null,
+    to: to ? to.toISOString() : null,
     bookings: rows.map((row) => serializeTeacherBooking(mapPrismaBookingToMongoLike(row))),
   };
 };
@@ -1397,6 +1897,9 @@ module.exports = {
   listRosterBookings,
   listAllForAdmin,
   getBookingDashboardStats,
+  getMentorSlotMonthlyStats,
+  getMentorSlotReportForTeacher,
+  getTeachersTodaySlotStats,
   getBookingWeekdayStats,
   updateBookingMedia,
   listTeacherPendingCompletion,

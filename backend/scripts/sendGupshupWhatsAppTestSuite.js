@@ -8,7 +8,7 @@
  * Optional: GUPSHUP_TEST_LINK_URL in backend/.env for Meet URL (template param 4).
  */
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+require("dotenv").config({ path: require("../src/config/dotenvPath") });
 process.env.GUPSHUP_ENABLED = "true";
 
 const { sendRosterBookingConfirmedWhatsApp } = require("../src/modules/notifications/gupshupWhatsApp.service");

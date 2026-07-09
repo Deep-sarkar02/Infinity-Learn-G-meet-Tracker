@@ -7,10 +7,11 @@ import { AdminLoginView } from "./AdminLoginView";
 export const LoginPage = ({ expectedRole }) => {
   const { login, loading } = useAuthController();
   const [form, setForm] = useState({ email: "", password: "" });
+  const [rememberMe, setRememberMe] = useState(false);
 
   const onSubmit = async (event) => {
     event.preventDefault();
-    await login(form, expectedRole);
+    await login(form, expectedRole, rememberMe);
   };
 
   if (expectedRole === "teacher") {
@@ -20,6 +21,8 @@ export const LoginPage = ({ expectedRole }) => {
         setForm={setForm}
         onSubmit={onSubmit}
         loading={loading}
+        rememberMe={rememberMe}
+        setRememberMe={setRememberMe}
       />
     );
   }
@@ -28,7 +31,9 @@ export const LoginPage = ({ expectedRole }) => {
     return (
       <AdminLoginView
         loading={loading}
-        onLogin={(creds) => login(creds, "admin")}
+        rememberMe={rememberMe}
+        setRememberMe={setRememberMe}
+        onLogin={(creds) => login(creds, "admin", rememberMe)}
       />
     );
   }

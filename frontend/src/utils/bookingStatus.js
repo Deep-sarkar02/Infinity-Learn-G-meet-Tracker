@@ -54,6 +54,27 @@ export const isBookingSessionResolved = (status) =>
   status === "student_did_not_join" ||
   status === "teacher_did_not_join";
 
+/** Student /book history status pill — Infinity Learn #007BFF palette. */
+export const ilBookingStatusChipClassName = (status, meta = /** @type {BookingStatusMeta} */ ({})) => {
+  if (status === "scheduled" && hasRescheduled(meta)) {
+    return "bg-[#EAF4FF] text-[#007BFF]";
+  }
+  switch (status) {
+    case "completed":
+      return "bg-[#E8F8EF] text-[#16A34A]";
+    case "scheduled":
+      return "bg-[#E8F8EF] text-[#16A34A]";
+    case "cancelled":
+      return "bg-[#F5F5F5] text-[#8A8A8A]";
+    case "student_did_not_join":
+      return "bg-[#FFFBEB] text-[#B45309]";
+    case "teacher_did_not_join":
+      return "bg-[#FEE2E2] text-[#DC2626]";
+    default:
+      return "bg-[#F5F5F5] text-[#8A8A8A]";
+  }
+};
+
 /** Admin / history table status pill background + text (Tailwind classes). */
 export const bookingStatusChipClassName = (status, meta = /** @type {BookingStatusMeta} */ ({})) => {
   if (status === "scheduled" && hasRescheduled(meta)) {

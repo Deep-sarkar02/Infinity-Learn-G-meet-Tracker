@@ -1,22 +1,16 @@
 # Docker Compose — hosted Postgres only (Neon, RDS, etc.)
 #
-# DATABASE_URL must reach the backend container (Prisma runs `db push` on start unless SKIP_PRISMA_PUSH=1).
-# Use either:
-#   • backend/.env (and/or backend/.env.production) on the server, OR
-#   • a repo-root .env (same folder as this file) — optional first env_file below — common for DevOps/CI.
-# If Prisma fails with P1012 "Environment variable not found: DATABASE_URL", the container did not load any
-# file containing DATABASE_URL (missing file, wrong path, or empty line). Verify:
+# Copy .env.example → .env in this folder (repo root). All backend + Docker settings live in that one file.
+# If Prisma fails with P1012 "Environment variable not found: DATABASE_URL", verify:
 #   docker compose run --rm --no-deps backend sh -lc 'echo "${DATABASE_URL:+set}"'
 #
-# env_file merge order (later overrides earlier): root .env → .env.docker → .env → .env.production (all optional except you need DATABASE_URL from somewhere).
-# 2) From repo root:
-#      docker compose up -d --build
-#    Recommended for production DB:
-#      SKIP_PRISMA_PUSH=1 docker compose up -d --build
-#    (Use prisma migrate deploy in CI instead of db push on container start.)
+# From repo root:
+#   docker compose up -d --build
+# Recommended for production DB:
+#   SKIP_PRISMA_PUSH=1 docker compose up -d --build
 #
 # Open http://localhost:${FRONTEND_PORT:-5176}
-# Env files: if a value contains "$", escape as "$$" for Docker Compose (e.g. LeadSquared keys like u$…).
+# If a value contains "$", escape as "$$" for Docker Compose (e.g. LeadSquared keys like u$…).
 
 name: il-gmeet-tracker
 
@@ -28,15 +22,11 @@ services:
     image: il-gmeet-backend:latest
     environment:
       NODE_ENV: production
+      # Set on the host to skip the startup schema push, e.g. SKIP_PRISMA_PUSH=1 docker compose up -d --build
+      SKIP_PRISMA_PUSH: ${SKIP_PRISMA_PUSH:-}
     env_file:
       - path: ./.env
-        required: false
-      - path: ./backend/.env.docker
-        required: false
-      - path: ./backend/.env
-        required: false
-      - path: ./backend/.env.production
-        required: false
+        required: true
     command:
       - sh
       - -c

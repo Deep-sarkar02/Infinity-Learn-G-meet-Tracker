@@ -9,7 +9,7 @@
  * Does not require LSQ_PROSPECT_ACTIVITY_ENABLED=true (CLI always sends if keys are set).
  */
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+require("dotenv").config({ path: require("../src/config/dotenvPath") });
 
 const env = require("../src/config/env");
 const {

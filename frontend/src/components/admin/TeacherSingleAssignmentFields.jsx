@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Input } from "../ui/Input";
 import { TEACHER_DISPLAY_OPTIONS } from "../../utils/validators";
 import { sanitizeBatchIdInput, sanitizeBatchNameInput } from "../../utils/batchFields";
@@ -149,6 +150,64 @@ const TeachesRow = ({ label, value, mono = false }) => (
     </span>
   </p>
 );
+
+/** Manage-teachers card: dropdown to pick one assignment at a time. */
+export const TeacherAssignmentsDropdown = ({ teacher, className = "" }) => {
+  const assignments = listTeacherAssignments(teacher);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  if (!assignments.length) {
+    return (
+      <div className={`space-y-2 ${className}`}>
+        <p className="text-xs font-bold text-[#0B3C5D]">Teaches :-</p>
+        <p className="rounded-lg bg-[#F5F5F5] px-3 py-2 text-xs font-medium text-[#1E73D8]">—</p>
+      </div>
+    );
+  }
+
+  const safeIndex = Math.min(selectedIndex, assignments.length - 1);
+  const selected = assignments[safeIndex];
+
+  const formatOptionLabel = (b, index) => {
+    const parts = [];
+    if (b.grade) parts.push(`Grade ${b.grade}`);
+    if (b.display) parts.push(b.display);
+    if (b.batchName) parts.push(b.batchName);
+    else if (b.batchId) parts.push(b.batchId);
+    const summary = parts.join(" · ") || "Assignment";
+    return assignments.length > 1 ? `Assignment ${index + 1}: ${summary}` : summary;
+  };
+
+  return (
+    <div className={`space-y-2 ${className}`}>
+      <p className="text-xs font-bold text-[#0B3C5D]">Teaches :-</p>
+      {assignments.length > 1 ? (
+        <label className="block space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/75">
+            Select assignment
+          </span>
+          <select
+            className="w-full rounded-lg border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2 text-xs font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+            value={safeIndex}
+            onChange={(e) => setSelectedIndex(Number(e.target.value))}
+          >
+            {assignments.map((b, index) => (
+              <option key={`${b.batchId}-${index}`} value={index}>
+                {formatOptionLabel(b, index)}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <div className="rounded-lg bg-[#F5F5F5] px-3 py-2 text-xs">
+        <TeachesRow label="Grade" value={selected.grade ? `Grade ${selected.grade}` : ""} />
+        <TeachesRow label="Channel" value={selected.display} />
+        <TeachesRow label="Batch ID" value={selected.batchId} mono />
+        <TeachesRow label="Batch name" value={selected.batchName} />
+      </div>
+    </div>
+  );
+};
 
 /** Manage-teachers card: "Teaches :-" with labeled grade, channel, batch fields. */
 export const TeacherTeachesBlock = ({ teacher, className = "" }) => {

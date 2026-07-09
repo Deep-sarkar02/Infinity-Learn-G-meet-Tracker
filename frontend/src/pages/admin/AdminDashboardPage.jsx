@@ -64,6 +64,7 @@ const shortcutLinks = [
   { to: "/admin/teachers", label: "Manage teachers", desc: "Directory & roles", icon: FiUsers },
   { to: "/admin/booking-window", label: "Booking window", desc: "Policy & slots", icon: FiClock },
   { to: "/admin/roster", label: "Student roster", desc: "Grades & batches", icon: FiClipboard },
+  { to: "/admin/roster/add", label: "Add student", desc: "Roster import", icon: FiUsers },
   { to: "/admin/bookings", label: "All bookings", desc: "Full timeline", icon: FiCalendar },
 ];
 

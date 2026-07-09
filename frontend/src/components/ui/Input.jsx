@@ -2,12 +2,17 @@ import { cn } from "../../utils/cn";
 
 export const Input = ({ label, error, icon: Icon, className, required, tone = "default", ...props }) => {
   const strict = tone === "admin" || tone === "brand";
+  const il = tone === "il";
   return (
     <label className="block space-y-1">
       {label ? (
         <span
           className={
-            strict ? "text-sm font-semibold text-[#0B3C5D]" : "text-sm font-medium text-slate-600"
+            il
+              ? "text-sm font-semibold text-[#1A1A1A]"
+              : strict
+                ? "text-sm font-semibold text-[#0B3C5D]"
+                : "text-sm font-medium text-slate-600"
           }
         >
           {label}
@@ -31,12 +36,16 @@ export const Input = ({ label, error, icon: Icon, className, required, tone = "d
         ) : null}
         <input
           className={cn(
-            strict
+            il
+              ? "w-full rounded-lg border border-[#007BFF]/80 bg-white px-3 py-2.5 text-sm text-[#1A1A1A] outline-none transition placeholder:text-[#8A8A8A] focus:border-[#007BFF] focus:ring-2 focus:ring-[#007BFF]/15"
+              : strict
               ? "w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0B3C5D] outline-none transition placeholder:text-[#1E73D8]/40 focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
               : "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100",
             Icon ? "pl-10" : "",
             error
-              ? strict
+              ? il
+                ? "border-red-400 focus:border-red-400 focus:ring-red-100"
+                : strict
                 ? "border-[#F4D35E] focus:border-[#1E73D8] focus:ring-[#F4D35E]/30"
                 : "border-red-300 focus:border-red-400 focus:ring-red-100"
               : "",
@@ -47,7 +56,13 @@ export const Input = ({ label, error, icon: Icon, className, required, tone = "d
         />
       </div>
       {error ? (
-        <p className={strict ? "text-xs font-medium text-[#0B3C5D]" : "text-xs text-red-600"}>{error}</p>
+        <p
+          className={
+            il ? "text-xs font-medium text-red-500" : strict ? "text-xs font-medium text-[#0B3C5D]" : "text-xs text-red-600"
+          }
+        >
+          {error}
+        </p>
       ) : null}
     </label>
   );

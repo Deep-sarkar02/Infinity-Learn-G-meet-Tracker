@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FiCalendar, FiCheckCircle, FiChevronDown, FiClock, FiList, FiMail, FiUser } from "react-icons/fi";
-import { Input } from "../../components/ui/Input";
-import { Button } from "../../components/ui/Button";
-import { Loader } from "../../components/ui/Loader";
-import { EmptyState } from "../../components/ui/EmptyState";
 import { InfoModal } from "../../components/ui/InfoModal";
-import { BookingHero, BookingNotice, BookingPanel } from "../../components/public/BookingPageChrome";
+import { OpenBookingLegacyDashboard } from "../../components/public/OpenBookingLegacyDashboard";
+import {
+  AuthCheckbox,
+  AuthPrimaryButton,
+  InfinityLearnLoginLayout,
+} from "../../components/auth/InfinityLearnLoginLayout";
+import { AuthPhoneField, isValidStudentPhone } from "../../components/auth/AuthPhoneField";
 import { publicBookingService } from "../../services/public.service";
 import { useToast } from "../../hooks/useToast";
 import { getKolkataYmd, nextKolkataDays, toDateLabel, toIsoDate, toTimeLabel } from "../../utils/date";
-import { bookingStatusChipClassName, formatBookingStatusLabel } from "../../utils/bookingStatus";
 import { isValidContactEmail, validateLookupForm } from "../../utils/validators";
-import { cn } from "../../utils/cn";
 import { logParentWhatsAppFromApi } from "../../utils/parentWhatsAppConsole";
 import { logLsqProspectActivityFromApi } from "../../utils/lsqProspectActivityConsole";
-import { BatchAssignmentMeta } from "../../components/BatchAssignmentMeta";
+import { SwitchProfileModal } from "../../components/public/SwitchProfileModal";
 import { renderModalPortal } from "../../components/ui/modalPortal";
 
 const RESCHEDULE_ACK_STORAGE_KEY = "il_open_booking_reschedule_ack_v1";
@@ -42,25 +41,13 @@ const mergeRescheduleAcks = (rosterId, updates) => {
   sessionStorage.setItem(RESCHEDULE_ACK_STORAGE_KEY, JSON.stringify(root));
 };
 
-const publicSlotStateLabel = (slotState) => {
-  switch (slotState) {
-    case "available":
-      return "Available";
-    case "yours":
-      return "Yours";
-    case "taken":
-      return "Taken";
-    case "cancelled":
-      return "Cancelled";
-    default:
-      return slotState || "—";
-  }
-};
-
 export const OpenBookingPage = () => {
   const { pushToast } = useToast();
   const [step, setStep] = useState(1);
   const [lookupForm, setLookupForm] = useState({ mobile: "" });
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [whatsappUpdates, setWhatsappUpdates] = useState(false);
+  const [lookupFieldError, setLookupFieldError] = useState("");
   const [lookupMatches, setLookupMatches] = useState([]);
   const [lookupModalOpen, setLookupModalOpen] = useState(false);
   const [roster, setRoster] = useState(null);
@@ -243,31 +230,44 @@ export const OpenBookingPage = () => {
     prevHadBookingRef.current = has;
   }, [openData, step]);
 
-  const handleLookup = async (event) => {
-    event.preventDefault();
-    const { ok, errors, values } = validateLookupForm(lookupForm);
-    if (!ok) {
-      setLookupErrors(errors);
-      pushToast({
-        title: "Please fix the fields marked below",
-        variant: "error",
-      });
+  const finishLookup = (matches) => {
+    if (!matches.length) {
+      pushToast({ title: "No student found", variant: "error" });
       return;
     }
+    if (matches.length === 1) {
+      setLookupMatches(matches);
+      setLookupModalOpen(false);
+      setRoster(matches[0]);
+      setContactEmail("");
+      setStep(2);
+      pushToast({ title: "Student verified" });
+      return;
+    }
+    setLookupMatches(matches);
+    setLookupModalOpen(true);
+  };
+
+  const handlePhoneSubmit = async (event) => {
+    event.preventDefault();
+    if (!agreedToTerms || !whatsappUpdates) {
+      pushToast({ title: "Please accept both options to continue", variant: "error" });
+      return;
+    }
+    const { ok, errors, values } = validateLookupForm(lookupForm);
+    if (!ok) {
+      setLookupFieldError(errors.mobile || "Enter a valid 10-digit mobile number");
+      return;
+    }
+    setLookupFieldError("");
     setLookupErrors({});
     setLoading(true);
     try {
-      const { data } = await publicBookingService.lookupStudent(values);
-      const matches = data.data?.students ?? [];
-      if (!matches.length) {
-        pushToast({ title: "No student found for this mobile number", variant: "error" });
-        return;
-      }
-      setLookupMatches(matches);
-      setLookupModalOpen(true);
+      const { data } = await publicBookingService.lookupStudent({ mobile: values.mobile });
+      finishLookup(data.data?.students ?? []);
     } catch (error) {
       pushToast({
-        title: error.response?.data?.message || "Unable to verify student",
+        title: error.response?.data?.message || "No student found for this mobile number",
         variant: "error",
       });
     } finally {
@@ -277,11 +277,24 @@ export const OpenBookingPage = () => {
 
   const handleChooseStudent = (student) => {
     setLookupModalOpen(false);
-    setLookupMatches([]);
     setRoster(student);
     setContactEmail("");
     setStep(2);
     pushToast({ title: "Student verified" });
+  };
+
+  const resetBookingSession = () => {
+    setRoster(null);
+    setContactEmail("");
+    setOpenData(null);
+    setLookupMatches([]);
+    setLookupModalOpen(false);
+    setBookingHistory([]);
+    setBookingHistoryError("");
+    setBookingHistorySectionOpen(false);
+    setRescheduleNotice({ open: false, items: [] });
+    rescheduleNoticeShownRef.current = false;
+    setStep(1);
   };
 
   const closeLookupModal = () => {
@@ -329,380 +342,101 @@ export const OpenBookingPage = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[#F5F5F5] px-4 py-8 md:px-8 md:py-12">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <BookingHero
-          eyebrow="Open booking"
-          title="Reserve your session"
-          description="No login required. Verify your roster details, choose a day, and pick an available teacher slot. Meet links are sent to your email."
+  const lookupModal = (
+    <SwitchProfileModal
+      open={lookupModalOpen && lookupMatches.length > 0}
+      students={lookupMatches}
+      onClose={closeLookupModal}
+      onConfirm={handleChooseStudent}
+    />
+  );
+
+  const canSubmitPhone =
+    isValidStudentPhone(lookupForm.mobile) && agreedToTerms && whatsappUpdates;
+
+  if (step === 1) {
+    return (
+      <>
+        <InfinityLearnLoginLayout
+          welcomeRole="Student"
+          welcomeSubtitle="Please enter your phone number to continue booking your session."
+          backTo="/"
+          footerLinks={[]}
         >
-          <span className="inline-flex items-center gap-2 rounded-full border border-[#FFFFFF]/25 bg-[#FFFFFF]/10 px-3 py-1.5 text-xs font-semibold text-[#8BBCEB]">
-            <FiCalendar className="h-4 w-4" />
-            {bookingWindowDays}-day booking window
-          </span>
-        </BookingHero>
+          <form className="space-y-5" onSubmit={handlePhoneSubmit}>
+            <AuthPhoneField
+              value={lookupForm.mobile}
+              onChange={(digits) => {
+                setLookupFieldError("");
+                setLookupMatches([]);
+                setLookupModalOpen(false);
+                setLookupForm({ mobile: digits });
+              }}
+              error={lookupFieldError}
+            />
 
-        <BookingNotice title="Before you confirm">
-          <p>
-            <span className="font-bold text-[#0B3C5D]">You cannot cancel</span> through this portal once a booking is
-            confirmed. To change or cancel, contact your coordinator or school office.
-          </p>
-        </BookingNotice>
+            <AuthCheckbox
+              id="book-terms"
+              checked={agreedToTerms}
+              onChange={(e) => setAgreedToTerms(e.target.checked)}
+            >
+              By signing up you agree to our{" "}
+              <a href="#" className="font-semibold text-[#007BFF] hover:underline">
+                T&amp;C
+              </a>{" "}
+              and{" "}
+              <a href="#" className="font-semibold text-[#007BFF] hover:underline">
+                Privacy Policy
+              </a>
+            </AuthCheckbox>
 
-        {step === 1 ? (
-          <BookingPanel className="mx-auto max-w-lg">
-            <div className="mb-6 flex items-start justify-between gap-4 border-b border-[#F5F5F5] pb-5">
-              <div>
-                <h2 className="font-heading text-lg font-bold text-[#0B3C5D]">Verify your details</h2>
-                <p className="mt-1 text-xs font-medium leading-relaxed text-[#1E73D8]/88">
-                  Use the same <span className="font-bold text-[#0B3C5D]">10-digit mobile</span> on file (cannot start
-                  with 0). We will show every roster profile linked to that number — tap yours to open booking.
-                </p>
-              </div>
-              <div className="rounded-xl bg-[#F5F5F5] px-3 py-2 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-[#0B3C5D]">Step</p>
-                <p className="font-heading text-xl font-black text-[#1E73D8]">01</p>
-              </div>
-            </div>
-            <form className="space-y-4" onSubmit={handleLookup}>
-              <Input
-                tone="brand"
-                label="Registered phone number"
-                type="tel"
-                inputMode="numeric"
-                maxLength={20}
-                value={lookupForm.mobile}
-                error={lookupErrors.mobile}
-                onChange={(event) => {
-                  setLookupErrors((prev) => {
-                    if (!prev.mobile) return prev;
-                    const next = { ...prev };
-                    delete next.mobile;
-                    return next;
-                  });
-                  setLookupMatches([]);
-                  setLookupModalOpen(false);
-                  setLookupForm((prev) => ({ ...prev, mobile: event.target.value }));
-                }}
-                required
-              />
-              <Button type="submit" variant="adminPrimary" className="w-full justify-center py-3" disabled={loading}>
-                {loading ? <Loader label="Checking…" variant="admin" /> : "Find student"}
-              </Button>
-            </form>
-          </BookingPanel>
-        ) : null}
-
-        {step === 2 && roster ? (
-          <div className="space-y-5">
-            {slotReleasedBanner ? (
-              <div
-                className="relative overflow-hidden rounded-2xl border border-[#25D366]/45 bg-[#FFFFFF] p-4 shadow-[0_12px_32px_-16px_rgba(37,211,102,0.35)] md:p-5"
-                role="status"
-              >
-                <div className="absolute left-0 top-0 h-full w-1.5 bg-[#25D366]" />
-                <div className="flex gap-3 pl-4">
-                  <FiCheckCircle className="mt-0.5 h-6 w-6 shrink-0 text-[#25D366]" />
-                  <div>
-                    <p className="font-heading text-base font-bold text-[#0B3C5D]">You can book again</p>
-                    <p className="mt-1 text-sm font-medium text-[#1E73D8]/90">
-                      Your previous slot on this day was released. Choose a new time below.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <BookingPanel className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex min-w-0 flex-1 items-start gap-3">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#F5F5F5] text-[#1E73D8]">
-                  <FiUser className="h-6 w-6" />
+            <AuthCheckbox
+              id="book-whatsapp"
+              checked={whatsappUpdates}
+              onChange={(e) => setWhatsappUpdates(e.target.checked)}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                Receive updates on WhatsApp
+                <span className="text-base leading-none text-[#25D366]" aria-hidden>
+                  ●
                 </span>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1E73D8]">Verified student</p>
-                  <p className="font-heading text-xl font-bold text-[#0B3C5D]">{roster.name}</p>
-                  <BatchAssignmentMeta
-                    className="mt-1"
-                    grade={roster.grade}
-                    display={roster.display}
-                    batchName={roster.batchName}
-                  />
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="adminGhost"
-                onClick={() => {
-                  setRoster(null);
-                  setContactEmail("");
-                  setOpenData(null);
-                  setLookupMatches([]);
-                  setLookupModalOpen(false);
-                  setBookingHistory([]);
-                  setBookingHistoryError("");
-                  setBookingHistorySectionOpen(false);
-                  setRescheduleNotice({ open: false, items: [] });
-                  rescheduleNoticeShownRef.current = false;
-                  setStep(1);
-                }}
-              >
-                Change student
-              </Button>
-            </BookingPanel>
+              </span>
+            </AuthCheckbox>
 
-            <BookingPanel>
-              <button
-                type="button"
-                className="mb-4 flex w-full items-center justify-between gap-3 border-b border-[#F5F5F5] pb-4 text-left transition hover:bg-[#F5F5F5]/60"
-                onClick={() => setBookingHistorySectionOpen((open) => !open)}
-                aria-expanded={bookingHistorySectionOpen}
-                aria-controls="open-booking-history-panel"
-                id="open-booking-history-heading"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <FiList className="h-5 w-5 shrink-0 text-[#1E73D8]" aria-hidden />
-                  <span className="font-heading text-lg font-bold text-[#0B3C5D]">Your booking history</span>
-                </span>
-                <FiChevronDown
-                  aria-hidden
-                  className={cn(
-                    "h-5 w-5 shrink-0 text-[#1E73D8] transition-transform duration-200",
-                    bookingHistorySectionOpen ? "rotate-180" : "rotate-0",
-                  )}
-                />
-              </button>
-              <div
-                id="open-booking-history-panel"
-                role="region"
-                aria-labelledby="open-booking-history-heading"
-                hidden={!bookingHistorySectionOpen}
-              >
-                <p className="mb-4 text-sm font-medium text-[#1E73D8]/88">
-                  Up to 50 recent sessions for this profile (newest first). Same phone number and student record as when
-                  you verified.
-                </p>
-                {bookingHistoryLoading ? (
-                  <div className="flex justify-center py-6">
-                    <Loader label="Loading history…" variant="admin" />
-                  </div>
-                ) : bookingHistoryError ? (
-                  <p className="text-sm font-medium text-[#B45309]">{bookingHistoryError}</p>
-                ) : bookingHistory.length === 0 ? (
-                  <p className="text-sm font-medium text-[#1E73D8]/80">No bookings yet for this student profile.</p>
-                ) : (
-                  <ul className="divide-y divide-[#8BBCEB]/25" aria-label="Booking history">
-                    {bookingHistory.map((row) => {
-                      const teacherName =
-                        row.teacherId && typeof row.teacherId === "object"
-                          ? row.teacherId.name
-                          : "Teacher";
-                      const meetLink =
-                        typeof row.meetingLink === "string" ? row.meetingLink.trim() : "";
-                      const meetLinkIsUrl = /^https?:\/\//i.test(meetLink);
-                      const statusMeta = { rescheduledAt: row.rescheduledAt };
-                      return (
-                        <li
-                          key={row._id}
-                          className="flex flex-col gap-2 py-4 first:pt-0 sm:flex-row sm:items-start sm:justify-between"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-semibold text-[#0B3C5D]">
-                              {toDateLabel(row.startTime)} · {toTimeLabel(row.startTime)} – {toTimeLabel(row.endTime)}{" "}
-                              IST
-                            </p>
-                            <p className="mt-1 text-sm font-medium text-[#1E73D8]/90">{teacherName}</p>
-                            <div className="mt-2 border-t border-[#8BBCEB]/20 pt-2">
-                              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#0B3C5D]/80">
-                                Meeting link
-                              </p>
-                              {meetLink ? (
-                                meetLinkIsUrl ? (
-                                  <a
-                                    href={meetLink}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="mt-1 inline-block max-w-full break-all text-sm font-semibold text-[#1E73D8] underline decoration-[#8BBCEB] underline-offset-2 hover:text-[#0B3C5D]"
-                                  >
-                                    {meetLink}
-                                  </a>
-                                ) : (
-                                  <p className="mt-1 break-all text-sm font-medium text-[#0B3C5D]">{meetLink}</p>
-                                )
-                              ) : (
-                                <p className="mt-1 text-xs font-medium text-[#1E73D8]/75">
-                                  Not stored for this session — use the calendar invite from your email if you have one.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <span
-                            className={cn(
-                              "shrink-0 self-start rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide",
-                              bookingStatusChipClassName(row.status, statusMeta),
-                            )}
-                          >
-                            {formatBookingStatusLabel(row.status, statusMeta)}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-              {!bookingHistorySectionOpen ? (
-                <p className="mt-2 text-xs font-medium text-[#1E73D8]/75">
-                  Tap the heading above to show or hide your past and upcoming sessions.
-                </p>
-              ) : null}
-            </BookingPanel>
+            <AuthPrimaryButton disabled={!canSubmitPhone} loading={loading}>
+              Book
+            </AuthPrimaryButton>
+          </form>
+        </InfinityLearnLoginLayout>
+        {lookupModal}
+      </>
+    );
+  }
 
-            <BookingPanel>
-              <div className="mb-4 flex items-center gap-2 border-b border-[#F5F5F5] pb-4">
-                <FiMail className="h-5 w-5 text-[#1E73D8]" />
-                <h2 className="font-heading text-lg font-bold text-[#0B3C5D]">Email for meeting link</h2>
-              </div>
-              <p className="mb-4 text-sm font-medium text-[#1E73D8]/88">
-                The Google Meet link and booking details will be sent to this address.
-              </p>
-              <Input
-                tone="brand"
-                label="Your email"
-                type="email"
-                autoComplete="email"
-                maxLength={254}
-                value={contactEmail}
-                error={
-                  contactEmail.trim() && !emailOk
-                    ? "Enter a valid email address (used for the Meet link)"
-                    : undefined
-                }
-                onChange={(event) => setContactEmail(event.target.value)}
-                required
-              />
-              {!emailOk && contactEmail.trim() === "" ? (
-                <p className="mt-2 text-xs font-medium text-[#8BBCEB]">Required before you can book a slot.</p>
-              ) : null}
-            </BookingPanel>
-
-            <BookingPanel>
-              <div className="mb-4 flex items-center gap-2 border-b border-[#F5F5F5] pb-4">
-                <FiClock className="h-5 w-5 text-[#F4D35E]" />
-                <h2 className="font-heading text-lg font-bold text-[#0B3C5D]">Pick a day</h2>
-              </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-7">
-                {days.map((day) => {
-                  const iso = toIsoDate(day);
-                  const active = iso === selectedDate;
-                  return (
-                    <button
-                      key={iso}
-                      type="button"
-                      onClick={() => setSelectedDate(iso)}
-                      className={cn(
-                        "rounded-xl border px-2 py-3 text-center text-xs font-bold transition md:text-[11px]",
-                        active
-                          ? "border-[#1E73D8] bg-[#1E73D8] text-[#FFFFFF] shadow-[0_8px_20px_-8px_rgba(30,115,216,0.45)]"
-                          : "border-[#8BBCEB]/45 bg-[#FFFFFF] text-[#0B3C5D] hover:border-[#1E73D8]/40 hover:bg-[#F5F5F5]",
-                      )}
-                    >
-                      {day.toLocaleDateString("en-US", {
-                        weekday: "short",
-                        month: "short",
-                        day: "2-digit",
-                      })}
-                    </button>
-                  );
-                })}
-              </div>
-            </BookingPanel>
-
-            {openData?.hasBookingToday && openData?.currentBooking ? (
-              <BookingPanel className="border-[#F4D35E]/55 bg-[#F4D35E]/12">
-                <p className="font-heading text-sm font-bold text-[#0B3C5D]">You already have a booking on this day.</p>
-                <p className="mt-2 text-sm font-semibold text-[#1E73D8]">
-                  {toTimeLabel(openData.currentBooking.startTime)} – {toTimeLabel(openData.currentBooking.endTime)} IST
-                </p>
-                <p className="mt-3 text-xs font-medium leading-relaxed text-[#0B3C5D]/90">
-                  Meeting cancellations are not available in this portal. If you need to change your session, please
-                  contact your coordinator or school office.
-                </p>
-              </BookingPanel>
-            ) : null}
-
-            {openData?.slots?.length ? (
-              <div className="space-y-4">
-                {openData.slots.map((slot) => (
-                  <BookingPanel key={`${slot.startTime}-${slot.endTime}`} className="!p-5">
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[#F5F5F5] pb-3">
-                      <p className="font-heading text-sm font-bold text-[#0B3C5D]">
-                        {toTimeLabel(slot.startTime)} – {toTimeLabel(slot.endTime)} IST
-                      </p>
-                      <span className="rounded-full bg-[#8BBCEB]/25 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#0B3C5D]">
-                        Time band
-                      </span>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {slot.teachers.map((teacher) => (
-                        <div
-                          key={`${teacher.slotId}-${teacher.teacherId}`}
-                          className={cn(
-                            "rounded-2xl border p-4 transition hover:border-[#1E73D8]/35 hover:bg-[#FFFFFF]",
-                            teacher.slotState === "cancelled"
-                              ? "border-[#94A3B8]/45 bg-[#F1F5F9]/80"
-                              : "border-[#8BBCEB]/35 bg-[#F5F5F5]/60",
-                          )}
-                        >
-                          <p className="font-heading font-bold text-[#0B3C5D]">{teacher.teacherName}</p>
-                          <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[#1E73D8]/80">
-                            {publicSlotStateLabel(teacher.slotState)}
-                          </p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {teacher.slotState === "yours" ? (
-                              <span className="text-xs font-bold text-[#0B3C5D]">
-                                Your booking (cancellation not available here)
-                              </span>
-                            ) : null}
-                            {teacher.slotState === "available" ? (
-                              <Button
-                                variant="adminPrimary"
-                                disabled={!teacher.canBook || loading || bookingInProgress || !emailOk}
-                                onClick={() => handleBook(teacher)}
-                                className="w-full justify-center sm:w-auto"
-                              >
-                                {teacher.canBook ? "Book this slot" : "Limit reached"}
-                              </Button>
-                            ) : null}
-                            {teacher.slotState === "taken" ? (
-                              <Button variant="adminGhost" disabled className="w-full justify-center sm:w-auto">
-                                Booked
-                              </Button>
-                            ) : null}
-                            {teacher.slotState === "cancelled" ? (
-                              <Button variant="adminGhost" disabled className="w-full justify-center sm:w-auto">
-                                Cancelled
-                              </Button>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </BookingPanel>
-                ))}
-              </div>
-            ) : loading ? (
-              <div className="flex justify-center py-10">
-                <Loader label="Loading slots…" variant="admin" />
-              </div>
-            ) : (
-              <EmptyState
-                tone="brand"
-                title="No slots for this day"
-                description="Ask your teacher to publish availability for this date."
-              />
-            )}
-          </div>
-        ) : null}
+  if (step === 2 && roster) {
+    return (
+      <>
+        <OpenBookingLegacyDashboard
+          roster={roster}
+          bookingWindowDays={bookingWindowDays}
+          slotReleasedBanner={slotReleasedBanner}
+          bookingHistorySectionOpen={bookingHistorySectionOpen}
+          setBookingHistorySectionOpen={setBookingHistorySectionOpen}
+          bookingHistoryLoading={bookingHistoryLoading}
+          bookingHistoryError={bookingHistoryError}
+          bookingHistory={bookingHistory}
+          contactEmail={contactEmail}
+          setContactEmail={setContactEmail}
+          emailOk={emailOk}
+          days={days}
+          selectedDate={selectedDate}
+          setSelectedDate={setSelectedDate}
+          openData={openData}
+          loading={loading}
+          bookingInProgress={bookingInProgress}
+          onLogout={resetBookingSession}
+          onBook={handleBook}
+        />
 
         {bookingInProgress
           ? renderModalPortal(
@@ -794,43 +528,10 @@ export const OpenBookingPage = () => {
           )}
         </InfoModal>
 
-        <InfoModal
-          open={lookupModalOpen && lookupMatches.length > 0}
-          tone="admin"
-          title={
-            lookupMatches.length === 1
-              ? "Student found"
-              : `${lookupMatches.length} students found`
-          }
-          onClose={closeLookupModal}
-        >
-          <p className="text-sm font-medium text-[#1E73D8]/90">
-            Registered number{" "}
-            <span className="font-bold text-[#0B3C5D]">{lookupMatches[0]?.mobile}</span>. Tap the correct profile to
-            continue to booking.
-          </p>
-          <ul className="mt-4 space-y-2">
-            {lookupMatches.map((student) => (
-              <li key={student.id}>
-                <button
-                  type="button"
-                  onClick={() => handleChooseStudent(student)}
-                  className="w-full rounded-xl border border-[#8BBCEB]/45 bg-[#F5F5F5]/60 p-4 text-left transition hover:border-[#1E73D8]/50 hover:bg-[#FFFFFF]"
-                >
-                  <p className="font-heading text-base font-bold text-[#0B3C5D]">{student.name}</p>
-                  <BatchAssignmentMeta
-                    className="mt-1"
-                    compact
-                    grade={student.grade}
-                    display={student.display}
-                    batchName={student.batchName}
-                  />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </InfoModal>
-      </div>
-    </div>
-  );
+        {lookupModal}
+      </>
+    );
+  }
+
+  return null;
 };

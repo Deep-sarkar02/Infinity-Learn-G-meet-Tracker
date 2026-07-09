@@ -1,15 +1,8 @@
-import { NavLink } from "react-router-dom";
+import { FiMenu } from "react-icons/fi";
 import { AppLogo } from "../../brand/AppLogo";
 import { useAuthStore } from "../../../models/auth.store";
-import { cn } from "../../../utils/cn";
 
-const navClass = ({ isActive }) =>
-  cn(
-    "text-base font-semibold transition-colors",
-    isActive ? "text-[#1E73D8]" : "text-[#1E73D8]/55 hover:text-[#0B3C5D]",
-  );
-
-export const TeacherTopBar = () => {
+export const TeacherTopBar = ({ onOpenNav }) => {
   const user = useAuthStore((s) => s.user);
   const initial = String(user?.name || user?.email || "T")
     .trim()
@@ -20,22 +13,23 @@ export const TeacherTopBar = () => {
     .toUpperCase();
 
   return (
-    <header className="flex items-center justify-between border-b border-[#8BBCEB]/35 bg-[#FFFFFF]/95 px-6 py-4 shadow-[0_12px_40px_-16px_rgba(11,60,93,0.12)] backdrop-blur-[20px] md:px-8">
-      <div className="flex min-w-0 flex-1 items-center gap-8">
-        <AppLogo size="md" className="shrink-0" linkTo="/" />
-        <nav className="flex flex-wrap items-center gap-3 text-sm md:gap-6 md:text-base" aria-label="Primary">
-          <NavLink to="/teacher" className={navClass} end>
-            Dashboard
-          </NavLink>
-        </nav>
-      </div>
-      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-[#FFFFFF] bg-[#8BBCEB]/45 text-sm font-bold text-[#0B3C5D] shadow-[0_0_0_2px_rgba(139,188,235,0.35)]"
-          aria-hidden
+    <header className="flex items-center justify-between gap-3 border-b border-[#8BBCEB]/35 bg-[#FFFFFF]/95 px-4 py-2.5 shadow-[0_8px_24px_-14px_rgba(11,60,93,0.1)] backdrop-blur-[20px] md:px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={onOpenNav}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#0B3C5D] transition hover:bg-[#F5F5F5] lg:hidden"
+          aria-label="Open menu"
         >
-          {initial}
-        </div>
+          <FiMenu className="h-5 w-5" aria-hidden />
+        </button>
+        <AppLogo size="sm" className="shrink-0" linkTo="/" />
+      </div>
+      <div
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-[#FFFFFF] bg-[#8BBCEB]/45 text-xs font-bold text-[#0B3C5D] shadow-[0_0_0_2px_rgba(139,188,235,0.35)]"
+        aria-hidden
+      >
+        {initial}
       </div>
     </header>
   );

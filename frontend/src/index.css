@@ -47,6 +47,7 @@
 
   .teacher-app--figma {
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    font-size: 14px;
   }
 
   /* Admin workspace — flat grey canvas (palette #F5F5F5 only; no brand gradient) */

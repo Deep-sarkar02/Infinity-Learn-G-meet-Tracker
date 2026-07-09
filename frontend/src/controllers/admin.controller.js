@@ -132,6 +132,19 @@ export const useAdminController = () => {
     }
   };
 
+  const viewTeacherPassword = async (teacherId, adminPassword) => {
+    try {
+      const { data } = await adminService.viewTeacherPassword(teacherId, adminPassword);
+      return data.data;
+    } catch (error) {
+      pushToast({
+        title: error.response?.data?.message || "Failed to view password",
+        variant: "error",
+      });
+      return null;
+    }
+  };
+
   const setBookingWindow = async (days) => {
     setLoading(true);
     try {
@@ -173,6 +186,7 @@ export const useAdminController = () => {
     updateTeacherGrade,
     updateTeacher,
     regenerateTeacherPassword,
+    viewTeacherPassword,
     setBookingWindow,
     loadBookingWindow,
   };

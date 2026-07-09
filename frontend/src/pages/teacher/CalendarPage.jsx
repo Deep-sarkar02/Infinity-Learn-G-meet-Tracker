@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { FiChevronRight } from "react-icons/fi";
 import { WeeklyCalendarGrid } from "../../components/calendar/WeeklyCalendarGrid";
 import { useTeacherController } from "../../controllers/teacher.controller";
-import { BookingHero, BookingPanel } from "../../components/teacher/TeacherWorkspaceChrome";
+import { BookingHero, BookingPanel, TeacherPageShell } from "../../components/teacher/TeacherWorkspaceChrome";
 import { CancelBookingModal } from "../../components/teacher/CancelBookingModal";
 import { RescheduleBookingModal } from "../../components/teacher/RescheduleBookingModal";
 
@@ -29,7 +29,7 @@ export const CalendarPage = () => {
   }, [loadCalendar]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <TeacherPageShell>
       <BookingHero
         eyebrow="Schedule"
         title="Student bookings"
@@ -88,6 +88,6 @@ export const CalendarPage = () => {
         onClose={() => setCancelBooking(null)}
         onConfirm={cancelTeacherBooking}
       />
-    </div>
+    </TeacherPageShell>
   );
 };

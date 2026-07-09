@@ -167,6 +167,34 @@ const getBookingWeekdayStats = async (req, res) => {
   });
 };
 
+const getMentorSlotStats = async (req, res) => {
+  const data = await bookingService.getMentorSlotMonthlyStats(req.query.month, req.query.week);
+  res.status(200).json({
+    success: true,
+    data,
+  });
+};
+
+const getMentorSlotReport = async (req, res) => {
+  const data = await bookingService.getMentorSlotReportForTeacher(
+    req.params.teacherId,
+    req.query.month,
+    req.query.week,
+  );
+  res.status(200).json({
+    success: true,
+    data,
+  });
+};
+
+const getTeachersTodaySlotStats = async (_req, res) => {
+  const data = await bookingService.getTeachersTodaySlotStats();
+  res.status(200).json({
+    success: true,
+    data,
+  });
+};
+
 const regenerateTeacherPassword = async (req, res) => {
   const result = await adminService.regenerateTeacherPassword(
     req.params.teacherId,
@@ -181,6 +209,19 @@ const regenerateTeacherPassword = async (req, res) => {
       emailSent: result.emailSent,
       smtpConfigured: result.smtpConfigured,
     },
+  });
+};
+
+const viewTeacherPassword = async (req, res) => {
+  const result = await adminService.viewTeacherPassword(
+    req.user._id || req.user.id,
+    req.params.teacherId,
+    req.body.adminPassword,
+  );
+  res.status(200).json({
+    success: true,
+    message: "Teacher password retrieved",
+    data: result,
   });
 };
 
@@ -199,5 +240,9 @@ module.exports = {
   patchBookingMedia,
   getBookingDashboardStats,
   getBookingWeekdayStats,
+  getMentorSlotStats,
+  getMentorSlotReport,
+  getTeachersTodaySlotStats,
   regenerateTeacherPassword,
+  viewTeacherPassword,
 };

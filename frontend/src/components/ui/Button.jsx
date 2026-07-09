@@ -20,6 +20,11 @@ const variants = {
     "!rounded-2xl bg-[#F4D35E] text-[#0B3C5D] shadow-[0_8px_20px_-8px_rgba(244,211,94,0.5)] hover:brightness-95",
   adminGhost:
     "!rounded-xl border border-[#8BBCEB]/70 bg-[#FFFFFF] text-[#0B3C5D] hover:bg-[#F5F5F5]",
+  /** Infinity Learn student booking — #007BFF from provided mocks */
+  ilPrimary:
+    "!rounded-full bg-[#007BFF] text-[#FFFFFF] shadow-[0_8px_20px_-8px_rgba(0,123,255,0.35)] hover:bg-[#0069D9] active:bg-[#005FCC]",
+  ilGhost:
+    "!rounded-full border border-[#E5E5E5] bg-[#FFFFFF] text-[#1A1A1A] hover:border-[#007BFF]/40 hover:bg-[#F8FBFF]",
 };
 
 const focusRingClass = (variant) => {
@@ -27,6 +32,7 @@ const focusRingClass = (variant) => {
   if (variant === "teacherSecondary") return "focus:ring-amber-400/50";
   if (variant.startsWith("teacher")) return "focus:ring-teacher-navy/35";
   if (variant.startsWith("admin")) return "focus:ring-[#8BBCEB]/60";
+  if (variant.startsWith("il")) return "focus:ring-[#007BFF]/30";
   return "focus:ring-brand-300";
 };
 

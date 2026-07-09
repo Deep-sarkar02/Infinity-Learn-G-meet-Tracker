@@ -11,6 +11,7 @@ const emailField = () =>
 const loginSchema = Joi.object({
   email: emailField(),
   password: Joi.string().required(),
+  rememberMe: Joi.boolean().default(false),
 });
 
 module.exports = {

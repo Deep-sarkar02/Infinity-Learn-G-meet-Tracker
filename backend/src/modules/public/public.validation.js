@@ -7,7 +7,12 @@ const {
 
 const lookupStudentSchema = Joi.object({
   mobile: normalizedMobile,
-});
+  userId: Joi.string().trim().min(1).max(120),
+})
+  .xor("mobile", "userId")
+  .messages({
+    "object.xor": "Provide either mobile or user ID",
+  });
 
 const openSlotsQuerySchema = Joi.object({
   rosterStudentId: objectIdString,

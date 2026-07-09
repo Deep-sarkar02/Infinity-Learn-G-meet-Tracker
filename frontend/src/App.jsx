@@ -9,13 +9,16 @@ import { AddTeacherPage } from "./pages/admin/AddTeacherPage";
 import { ManageTeachersPage } from "./pages/admin/ManageTeachersPage";
 import { BookingWindowPage } from "./pages/admin/BookingWindowPage";
 import { AllBookingsPage } from "./pages/admin/AllBookingsPage";
+import { MentorSlotAnalyticsPage } from "./pages/admin/MentorSlotAnalyticsPage";
 import { TeacherDashboardPage } from "./pages/teacher/TeacherDashboardPage";
 import { AvailabilityPage } from "./pages/teacher/AvailabilityPage";
 import { CalendarPage } from "./pages/teacher/CalendarPage";
 import { TeacherBookingHistoryPage } from "./pages/teacher/TeacherBookingHistoryPage";
+import { TeacherAssignmentsPage } from "./pages/teacher/TeacherAssignmentsPage";
 import { HomePage } from "./pages/HomePage";
 import { OpenBookingPage } from "./pages/public/OpenBookingPage";
 import { RosterStudentsPage } from "./pages/admin/RosterStudentsPage";
+import { AddRosterStudentPage } from "./pages/admin/AddRosterStudentPage";
 
 const App = () => (
   <ToastProvider>
@@ -28,7 +31,7 @@ const App = () => (
         <Route
           path="/login/admin"
           element={
-            <PublicOnlyRoute>
+            <PublicOnlyRoute forRole="admin">
               <LoginPage expectedRole="admin" />
             </PublicOnlyRoute>
           }
@@ -36,7 +39,7 @@ const App = () => (
         <Route
           path="/login/teacher"
           element={
-            <PublicOnlyRoute>
+            <PublicOnlyRoute forRole="teacher">
               <LoginPage expectedRole="teacher" />
             </PublicOnlyRoute>
           }
@@ -83,6 +86,14 @@ const App = () => (
             }
           />
           <Route
+            path="/admin/slot-analytics"
+            element={
+              <ProtectedRoute roles={["admin"]}>
+                <MentorSlotAnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/admin/bookings"
             element={
               <ProtectedRoute roles={["admin"]}>
@@ -95,6 +106,14 @@ const App = () => (
             element={
               <ProtectedRoute roles={["admin"]}>
                 <RosterStudentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/roster/add"
+            element={
+              <ProtectedRoute roles={["admin"]}>
+                <AddRosterStudentPage />
               </ProtectedRoute>
             }
           />
@@ -128,6 +147,14 @@ const App = () => (
             element={
               <ProtectedRoute roles={["teacher"]}>
                 <TeacherBookingHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/teacher/assignments"
+            element={
+              <ProtectedRoute roles={["teacher"]}>
+                <TeacherAssignmentsPage />
               </ProtectedRoute>
             }
           />

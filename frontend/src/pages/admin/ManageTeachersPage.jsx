@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { FiShield } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FiRefreshCw, FiSearch, FiShield } from "react-icons/fi";
 import { useAdminController } from "../../controllers/admin.controller";
+import { adminService } from "../../services/admin.service";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -15,9 +16,14 @@ import {
 import { AdminPageHero, AdminPanel } from "../../components/admin/AdminPageChrome";
 import { TeacherBatchesEditor, batchesFromTeacher } from "../../components/admin/TeacherBatchesEditor";
 import {
-  TeacherTeachesBlock,
+  TeacherAssignmentsDropdown,
   listTeacherAssignments,
 } from "../../components/admin/TeacherSingleAssignmentFields";
+import { toTimeLabel } from "../../utils/date";
+import {
+  bookingStatusChipClassName,
+  formatBookingStatusShortBadge,
+} from "../../utils/bookingStatus";
 
 const GRADES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
 const PAGE_SIZE = 10;
@@ -42,22 +48,101 @@ const teacherMatchesDisplayFilter = (teacher, displayFilter) => {
   return assignments.some((a) => String(a.display || "").trim() === displayFilter);
 };
 
+const teacherMatchesSearch = (teacher, query) => {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return true;
+  if (String(teacher.name ?? "").toLowerCase().includes(q)) return true;
+  if (String(teacher.email ?? "").toLowerCase().includes(q)) return true;
+  return listTeacherAssignments(teacher).some((assignment) => {
+    const hay = [
+      assignment.grade,
+      assignment.display,
+      assignment.batchId,
+      assignment.batchName,
+      assignment.channel,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  });
+};
+
+const formatTodayYmdLabel = (ymd) => {
+  if (!ymd) return "Today";
+  const date = new Date(`${ymd}T12:00:00+05:30`);
+  return date.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+};
+
+const slotStatusChipClass = (status) => {
+  if (status === "open") return "bg-[#F5F5F5] text-[#0B3C5D]";
+  return bookingStatusChipClassName(status);
+};
+
+const slotStatusLabel = (status) => {
+  if (status === "open") return "Open";
+  if (status === "booked") return "Booked";
+  return formatBookingStatusShortBadge(status);
+};
+
 export const ManageTeachersPage = () => {
   const { pushToast } = useToast();
-  const { teachers, loadTeachers, updateTeacher, regenerateTeacherPassword, loading } =
+  const { teachers, loadTeachers, updateTeacher, regenerateTeacherPassword, viewTeacherPassword, loading } =
     useAdminController();
   const [generatedPasswords, setGeneratedPasswords] = useState({});
+  const [viewPasswordTeacher, setViewPasswordTeacher] = useState(null);
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [revealedPassword, setRevealedPassword] = useState("");
+  const [viewPasswordLoading, setViewPasswordLoading] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [editTouched, setEditTouched] = useState({});
   const [editSubmitAttempt, setEditSubmitAttempt] = useState(false);
   const [gradeFilter, setGradeFilter] = useState("");
   const [displayFilter, setDisplayFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [todayStats, setTodayStats] = useState(null);
+  const [todayStatsLoading, setTodayStatsLoading] = useState(false);
+  const [slotModalTeacher, setSlotModalTeacher] = useState(null);
 
   useEffect(() => {
     loadTeachers();
   }, [loadTeachers]);
+
+  const loadTodayStats = useCallback(async () => {
+    setTodayStatsLoading(true);
+    try {
+      const { data } = await adminService.getTeachersTodaySlotStats();
+      setTodayStats(data.data ?? null);
+    } catch (error) {
+      pushToast({
+        title: error.response?.data?.message || "Could not load today's slot stats",
+        variant: "error",
+      });
+      setTodayStats(null);
+    } finally {
+      setTodayStatsLoading(false);
+    }
+  }, [pushToast]);
+
+  useEffect(() => {
+    loadTodayStats();
+  }, [loadTodayStats]);
+
+  const todayStatsByTeacher = useMemo(() => {
+    const map = new Map();
+    for (const row of todayStats?.byTeacher ?? []) {
+      map.set(row.teacherId, row);
+    }
+    return map;
+  }, [todayStats]);
 
   const fieldErrors = useMemo(
     () =>
@@ -79,8 +164,11 @@ export const ManageTeachersPage = () => {
     if (displayFilter) {
       rows = rows.filter((t) => teacherMatchesDisplayFilter(t, displayFilter));
     }
+    if (searchQuery.trim()) {
+      rows = rows.filter((t) => teacherMatchesSearch(t, searchQuery));
+    }
     return rows;
-  }, [teachers, gradeFilter, displayFilter]);
+  }, [teachers, gradeFilter, displayFilter, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTeachers.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -128,13 +216,43 @@ export const ManageTeachersPage = () => {
   };
 
   const copyPassword = async (teacherId) => {
-    const password = generatedPasswords[teacherId];
+    const password = generatedPasswords[teacherId] || (viewPasswordTeacher?.id === teacherId ? revealedPassword : "");
     if (!password) return;
     try {
       await navigator.clipboard.writeText(password);
       pushToast({ title: "Password copied" });
     } catch {
       pushToast({ title: "Could not copy password", variant: "error" });
+    }
+  };
+
+  const openViewPassword = (teacher) => {
+    setViewPasswordTeacher(teacher);
+    setAdminPasswordInput("");
+    setRevealedPassword("");
+  };
+
+  const closeViewPassword = () => {
+    setViewPasswordTeacher(null);
+    setAdminPasswordInput("");
+    setRevealedPassword("");
+    setViewPasswordLoading(false);
+  };
+
+  const submitViewPassword = async () => {
+    if (!viewPasswordTeacher || !adminPasswordInput.trim()) {
+      pushToast({ title: "Enter your admin password", variant: "error" });
+      return;
+    }
+    setViewPasswordLoading(true);
+    const result = await viewTeacherPassword(viewPasswordTeacher.id, adminPasswordInput);
+    setViewPasswordLoading(false);
+    if (result?.password) {
+      setRevealedPassword(result.password);
+      setGeneratedPasswords((prev) => ({
+        ...prev,
+        [viewPasswordTeacher.id]: result.password,
+      }));
     }
   };
 
@@ -178,7 +296,26 @@ export const ManageTeachersPage = () => {
         </span>
       </AdminPageHero>
 
-      <AdminPanel className="flex flex-col gap-3 rounded-2xl border border-[#8BBCEB]/35 bg-[#F5F5F5] p-4 sm:flex-row sm:flex-wrap sm:items-end">
+      <AdminPanel className="flex flex-col gap-4 rounded-2xl border border-[#8BBCEB]/35 bg-[#F5F5F5] p-4">
+        <div className="relative">
+          <FiSearch
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8BBCEB]"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search by name, email, grade, channel, or batch…"
+            className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] py-2.5 pl-10 pr-3 text-sm font-medium text-[#0B3C5D] outline-none transition placeholder:text-[#1E73D8]/40 focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+            aria-label="Search teachers"
+          />
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <label className="block min-w-[12rem] space-y-1">
           <span className="text-sm font-semibold text-[#0B3C5D]">Filter by grade taught</span>
           <select
@@ -222,26 +359,48 @@ export const ManageTeachersPage = () => {
           <span className="font-bold text-[#0B3C5D]">
             {filteredTeachers.length} of {teachers.length}
           </span>{" "}
-          {gradeFilter || displayFilter ? `(filters active)` : `(all instructors)`}
+          {gradeFilter || displayFilter || searchQuery.trim()
+            ? `(filters active)`
+            : `(all instructors)`}
         </p>
+        <Button
+          type="button"
+          variant="adminGhost"
+          disabled={todayStatsLoading}
+          onClick={loadTodayStats}
+          className="shrink-0"
+        >
+          <FiRefreshCw className={todayStatsLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+          Refresh today&apos;s slots
+        </Button>
         {loading ? <Loader label="Loading..." variant="admin" /> : null}
+        </div>
       </AdminPanel>
 
       {!filteredTeachers.length ? (
         <AdminPanel>
           <EmptyState
             tone="admin"
-            title={gradeFilter ? "No teachers match this grade" : "No teachers yet"}
+            title={
+              gradeFilter || displayFilter || searchQuery.trim()
+                ? "No teachers match your filters"
+                : "No teachers yet"
+            }
             description={
-              gradeFilter
-                ? "Try another grade or choose “All grades” to see everyone on file."
+              gradeFilter || displayFilter || searchQuery.trim()
+                ? "Try another search term or clear filters to see everyone on file."
                 : "Add teachers from the Add Teacher page."
             }
           />
         </AdminPanel>
       ) : (
       <div className="space-y-4">
-        {paginatedTeachers.map((teacher, index) => (
+        {paginatedTeachers.map((teacher, index) => {
+          const todayRow = todayStatsByTeacher.get(teacher.id);
+          const slotsOffered = todayRow?.slotsOffered ?? 0;
+          const slotsBooked = todayRow?.slotsBooked ?? 0;
+
+          return (
           <AdminPanel
             key={teacher.id}
             className="relative overflow-hidden border-[#8BBCEB]/40 transition hover:shadow-[0_16px_40px_-24px_rgba(30,115,216,0.35)]"
@@ -258,7 +417,7 @@ export const ManageTeachersPage = () => {
                   </div>
                   <p className="mt-1 text-sm font-medium text-[#1E73D8]">{teacher.email}</p>
                   <div className="mt-3">
-                    <TeacherTeachesBlock teacher={teacher} />
+                    <TeacherAssignmentsDropdown teacher={teacher} />
                   </div>
                   {generatedPasswords[teacher.id] ? (
                     <div className="mt-4 rounded-xl border border-[#8BBCEB]/40 bg-[#F5F5F5] p-3">
@@ -281,8 +440,29 @@ export const ManageTeachersPage = () => {
                   ) : null}
                 </div>
                 <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                  <Button
+                    type="button"
+                    variant="adminGhost"
+                    disabled={todayStatsLoading}
+                    onClick={() => setSlotModalTeacher(teacher)}
+                  >
+                    Today&apos;s slots
+                    {todayRow ? (
+                      <span className="ml-1.5 rounded-full bg-[#1E73D8]/12 px-2 py-0.5 text-[10px] font-bold text-[#0B3C5D]">
+                        {slotsBooked}/{slotsOffered}
+                      </span>
+                    ) : null}
+                  </Button>
                   <Button type="button" variant="adminPrimary" disabled={loading} onClick={() => openEdit(teacher)}>
                     Update profile
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="adminGhost"
+                    disabled={loading}
+                    onClick={() => openViewPassword(teacher)}
+                  >
+                    View password
                   </Button>
                   <Button
                     type="button"
@@ -304,7 +484,8 @@ export const ManageTeachersPage = () => {
               </div>
             </div>
           </AdminPanel>
-        ))}
+          );
+        })}
 
         <AdminPanel className="flex flex-col gap-3 rounded-2xl border border-[#8BBCEB]/30 bg-[#F5F5F5] p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-semibold text-[#0B3C5D]">
@@ -333,6 +514,156 @@ export const ManageTeachersPage = () => {
         </AdminPanel>
       </div>
       )}
+
+      <Modal
+        open={Boolean(viewPasswordTeacher)}
+        title={viewPasswordTeacher ? `View password — ${viewPasswordTeacher.name}` : "View password"}
+        confirmLabel={revealedPassword ? "Close" : "View password"}
+        tone="admin"
+        onClose={closeViewPassword}
+        onConfirm={revealedPassword ? closeViewPassword : submitViewPassword}
+        confirmLoading={viewPasswordLoading}
+        confirmDisabled={!revealedPassword && !adminPasswordInput.trim()}
+      >
+        {viewPasswordTeacher ? (
+          <div className="space-y-4">
+            <p className="text-sm font-medium text-[#1E73D8]/90">
+              Enter your admin password to view this teacher&apos;s login credential.
+            </p>
+            {!revealedPassword ? (
+              <Input
+                tone="admin"
+                label="Your admin password"
+                type="password"
+                autoComplete="current-password"
+                value={adminPasswordInput}
+                onChange={(event) => setAdminPasswordInput(event.target.value)}
+                required
+              />
+            ) : (
+              <div className="rounded-xl border border-[#8BBCEB]/40 bg-[#F5F5F5] p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#0B3C5D]">Teacher password</p>
+                <p className="mt-1 break-all font-mono text-xs font-medium text-[#0B3C5D]">{revealedPassword}</p>
+                <Button
+                  type="button"
+                  variant="adminGhost"
+                  className="mt-2"
+                  onClick={() => copyPassword(viewPasswordTeacher.id)}
+                >
+                  Copy password
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(slotModalTeacher)}
+        title={
+          slotModalTeacher
+            ? `Today's slots — ${slotModalTeacher.name}`
+            : "Today's slots"
+        }
+        confirmLabel="Close"
+        tone="admin"
+        maxWidth="md"
+        onClose={() => setSlotModalTeacher(null)}
+        onConfirm={() => setSlotModalTeacher(null)}
+      >
+        {slotModalTeacher ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium text-[#1E73D8]/90">
+                {formatTodayYmdLabel(todayStats?.dateYmd)} · Asia/Kolkata
+              </p>
+              <Button
+                type="button"
+                variant="adminGhost"
+                disabled={todayStatsLoading}
+                onClick={loadTodayStats}
+              >
+                <FiRefreshCw className={todayStatsLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+                Refresh
+              </Button>
+            </div>
+
+            {todayStatsLoading && !todayStats ? (
+              <Loader label="Loading today's slots…" variant="admin" />
+            ) : (
+              <>
+                {(() => {
+                  const row = todayStatsByTeacher.get(slotModalTeacher.id);
+                  if (!row) {
+                    return (
+                      <EmptyState
+                        tone="admin"
+                        title="No slots today"
+                        description="This teacher has not published any slots for today yet."
+                      />
+                    );
+                  }
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-xl border border-[#8BBCEB]/35 bg-[#F5F5F5] p-3 text-center">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/80">
+                            Offered
+                          </p>
+                          <p className="mt-1 font-heading text-2xl font-bold text-[#0B3C5D]">
+                            {row.slotsOffered}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-[#8BBCEB]/35 bg-[#F5F5F5] p-3 text-center">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/80">
+                            Booked
+                          </p>
+                          <p className="mt-1 font-heading text-2xl font-bold text-[#0B3C5D]">
+                            {row.slotsBooked}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-[#8BBCEB]/35 bg-[#F5F5F5] p-3 text-center">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[#1E73D8]/80">
+                            Open
+                          </p>
+                          <p className="mt-1 font-heading text-2xl font-bold text-[#0B3C5D]">
+                            {row.slotsUnbooked}
+                          </p>
+                        </div>
+                      </div>
+
+                      {row.slots.length ? (
+                        <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                          {row.slots.map((slot) => (
+                            <div
+                              key={`${slot.startTime}-${slot.endTime}`}
+                              className="flex items-center justify-between gap-3 rounded-xl border border-[#8BBCEB]/30 bg-[#FFFFFF] px-3 py-2.5"
+                            >
+                              <p className="text-sm font-semibold text-[#0B3C5D]">
+                                {toTimeLabel(slot.startTime)} – {toTimeLabel(slot.endTime)}
+                              </p>
+                              <span
+                                className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${slotStatusChipClass(slot.status)}`}
+                              >
+                                {slotStatusLabel(slot.status)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm font-medium text-[#1E73D8]/85">
+                          No slot times listed for today.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={Boolean(editingTeacher && editForm)}

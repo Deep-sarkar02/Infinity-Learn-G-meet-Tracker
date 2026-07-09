@@ -7,7 +7,7 @@ import { Modal } from "../../components/ui/Modal";
 import { useTeacherController } from "../../controllers/teacher.controller";
 import { useToast } from "../../hooks/useToast";
 import { cn } from "../../utils/cn";
-import { BookingHero, BookingPanel } from "../../components/teacher/TeacherWorkspaceChrome";
+import { BookingHero, BookingPanel, TeacherPageShell } from "../../components/teacher/TeacherWorkspaceChrome";
 import {
   addDaysToYmdKolkata,
   getKolkataYmd,
@@ -270,7 +270,7 @@ export const AvailabilityPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <TeacherPageShell>
       <BookingHero
         eyebrow="Planner"
         title="Availability planner"
@@ -512,6 +512,6 @@ export const AvailabilityPage = () => {
           </div>
         ) : null}
       </Modal>
-    </div>
+    </TeacherPageShell>
   );
 };

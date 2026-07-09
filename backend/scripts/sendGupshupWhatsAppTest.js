@@ -9,7 +9,7 @@
  * optional GUPSHUP_SRC_NAME (recommended), approved template (4 params). POST …/template/msg.
  */
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+require("dotenv").config({ path: require("../src/config/dotenvPath") });
 const env = require("../src/config/env");
 const { normalizeMobile } = require("../src/utils/mobile");
 

@@ -27,6 +27,8 @@ model User {
   name          String   @db.VarChar(120)
   email         String   @unique @db.VarChar(255)
   passwordHash  String   @map("password_hash")
+  /** AES-encrypted teacher login password for admin retrieval (teachers only). */
+  encryptedCredential String? @map("encrypted_credential") @db.Text
   role          UserRole
   grade         String?  @db.VarChar(8)
   display       String?  @db.VarChar(120)
@@ -90,6 +92,7 @@ model RosterStudent {
 
   @@map("roster_students")
   @@unique([mobile, nameLower], map: "ux_roster_mobile_name_lower")
+  @@unique([userId, mobile, grade, display, batchId, batchName], map: "ux_roster_student_identity")
   @@index([grade, display, batchId, batchName], map: "idx_roster_routing")
 }
 

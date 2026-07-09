@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const getPrisma = require("../../config/postgres");
 const { idOrLegacyWhere } = require("../../utils/id");
+const { encryptCredential, decryptCredential } = require("../../utils/credentialCipher");
 
 const SETTINGS_KEY = "BOOKING_WINDOW";
 
@@ -59,6 +60,40 @@ const loadTeacherWithBatches = async (idWhere) => {
     include: teacherBatchesInclude,
   });
   return teacher;
+};
+
+/** Raw SQL — works before Prisma client is regenerated with encrypted_credential. */
+const saveEncryptedCredential = async (userId, plainPassword) => {
+  const encrypted = encryptCredential(plainPassword);
+  if (!encrypted) return;
+  await prisma.$executeRaw`
+    UPDATE users SET encrypted_credential = ${encrypted} WHERE id = ${userId}::uuid
+  `;
+};
+
+const loadTeacherCredentialRow = async (teacherId) => {
+  const idWhere = idOrLegacyWhere(teacherId);
+  if (!idWhere) return null;
+
+  const teacher = await prisma.user.findFirst({
+    where: { AND: [idWhere, { role: "teacher" }] },
+    select: { id: true, name: true, email: true },
+  });
+  if (!teacher) return null;
+
+  const rows = await prisma.$queryRaw`
+    SELECT encrypted_credential
+    FROM users
+    WHERE id = ${teacher.id}::uuid
+    LIMIT 1
+  `;
+
+  return {
+    id: teacher.id,
+    name: teacher.name,
+    email: teacher.email,
+    encrypted_credential: rows[0]?.encrypted_credential ?? null,
+  };
 };
 
 const appendAssignmentsToTeacher = async (teacherId, payload) => {
@@ -126,6 +161,7 @@ const createTeacher = async (payload) => {
       batchName: primary.batchName,
     },
   });
+  await saveEncryptedCredential(teacher.id, plainPassword);
   await replaceTeacherBatches(prisma, teacher.id, batches);
   const teacherWithBatches = await loadTeacherWithBatches({ id: teacher.id });
   const shaped = shapeTeacherBatchesForApi(teacherWithBatches);
@@ -312,6 +348,7 @@ const regenerateTeacherPassword = async (teacherId, sendEmail = true) => {
     where: { id: teacher.id },
     data: { passwordHash },
   });
+  await saveEncryptedCredential(teacher.id, plainPassword);
 
   const emailBatches = formatBatchesForEmail(shapeTeacherBatchesForApi(teacher).batches);
 
@@ -340,6 +377,40 @@ const regenerateTeacherPassword = async (teacherId, sendEmail = true) => {
   };
 };
 
+const viewTeacherPassword = async (adminUserId, teacherId, adminPassword) => {
+  if (!prisma) throw new ApiError(500, "Postgres is not configured");
+  const adminLookup = idOrLegacyWhere(adminUserId);
+  if (!adminLookup) throw new ApiError(401, "Invalid admin session");
+  const admin = await prisma.user.findFirst({
+    where: { AND: [adminLookup, { role: "admin" }] },
+    select: { passwordHash: true },
+  });
+  if (!admin || !(await bcrypt.compare(String(adminPassword || ""), admin.passwordHash))) {
+    throw new ApiError(401, "Invalid admin password");
+  }
+
+  const teacher = await loadTeacherCredentialRow(teacherId);
+  if (!teacher) {
+    throw new ApiError(404, "Teacher not found");
+  }
+  if (!teacher.encrypted_credential) {
+    throw new ApiError(
+      404,
+      "Password is not available for this teacher. Regenerate password to store a viewable credential.",
+    );
+  }
+  const plainPassword = decryptCredential(teacher.encrypted_credential);
+  if (!plainPassword) {
+    throw new ApiError(500, "Stored password could not be decrypted. Regenerate the teacher password.");
+  }
+  return {
+    teacherId: teacher.id,
+    teacherName: teacher.name,
+    teacherEmail: teacher.email,
+    password: plainPassword,
+  };
+};
+
 const configureBookingWindow = async (bookingWindowDays) => {
   if (!prisma) throw new ApiError(500, "Postgres is not configured");
   return prisma.appSetting.upsert({
@@ -362,6 +433,7 @@ module.exports = {
   assignGradeToTeacher,
   updateTeacherDetails,
   regenerateTeacherPassword,
+  viewTeacherPassword,
   configureBookingWindow,
   getBookingWindowDays,
 };

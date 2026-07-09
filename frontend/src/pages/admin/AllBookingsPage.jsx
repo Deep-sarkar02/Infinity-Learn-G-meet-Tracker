@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FiChevronLeft, FiChevronRight, FiRefreshCw } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { FiChevronLeft, FiChevronRight, FiDownload, FiRefreshCw, FiSearch } from "react-icons/fi";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -10,6 +11,8 @@ import { useToast } from "../../hooks/useToast";
 import { AdminPageHero, AdminPanel } from "../../components/admin/AdminPageChrome";
 import { bookingStatusChipClassName, formatBookingStatusLabel } from "../../utils/bookingStatus";
 import { sanitizeBatchIdInput } from "../../utils/batchFields";
+import { formatWeekOptionLabel, getWeeksInMonth } from "../../utils/istMonthWeeks";
+import { downloadBookingsExcel } from "../../utils/exportBookingsExcel";
 
 const PAGE_SIZE = 20;
 
@@ -114,6 +117,10 @@ const DetailField = ({ label, children }) => (
 
 export const AllBookingsPage = () => {
   const { pushToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const urlFromYmd = searchParams.get("fromYmd") || "";
+  const urlToYmd = searchParams.get("toYmd") || "";
+  const urlMonth = searchParams.get("month") || "";
   const [rows, setRows] = useState([]);
   const [listMeta, setListMeta] = useState({ total: 0, totalPages: 1 });
   const [page, setPage] = useState(1);
@@ -121,21 +128,96 @@ export const AllBookingsPage = () => {
   const [gradeFilter, setGradeFilter] = useState("");
   const [batchIdFilter, setBatchIdFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateMode, setDateMode] = useState(() => (urlFromYmd && urlToYmd ? "custom" : "month"));
+  const [monthFilter, setMonthFilter] = useState(() => urlMonth || (urlFromYmd ? urlFromYmd.slice(0, 7) : ""));
+  const [weekFilter, setWeekFilter] = useState("");
+  const [customFromYmd, setCustomFromYmd] = useState(urlFromYmd);
+  const [customToYmd, setCustomToYmd] = useState(urlToYmd);
+  const [teacherIdFilter, setTeacherIdFilter] = useState(() => searchParams.get("teacherId") || "");
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [detailRow, setDetailRow] = useState(null);
   const staleArtifactToastKeyRef = useRef(null);
+  const prevMonthRef = useRef(monthFilter);
+
+  const weeksInMonth = useMemo(() => getWeeksInMonth(monthFilter), [monthFilter]);
+
+  useEffect(() => {
+    if (prevMonthRef.current !== monthFilter) {
+      setWeekFilter("");
+      prevMonthRef.current = monthFilter;
+    }
+  }, [monthFilter]);
 
   useEffect(() => {
     setPage(1);
-  }, [gradeFilter, batchIdFilter, statusFilter]);
+  }, [
+    gradeFilter,
+    batchIdFilter,
+    statusFilter,
+    searchQuery,
+    dateMode,
+    monthFilter,
+    weekFilter,
+    customFromYmd,
+    customToYmd,
+    teacherIdFilter,
+  ]);
+
+  const resolveDateApiParams = useCallback(() => {
+    if (dateMode === "custom") {
+      if (customFromYmd && customToYmd) {
+        return { fromYmd: customFromYmd, toYmd: customToYmd };
+      }
+      return {};
+    }
+    if (monthFilter && weekFilter) {
+      const week = weeksInMonth.find((w) => String(w.week) === weekFilter);
+      if (week) {
+        return { fromYmd: week.fromYmd, toYmd: week.toYmd };
+      }
+    }
+    if (monthFilter) {
+      return { month: monthFilter };
+    }
+    return {};
+  }, [dateMode, customFromYmd, customToYmd, monthFilter, weekFilter, weeksInMonth]);
+
+  const buildFilterParams = useCallback(() => {
+    const params = {};
+    if (gradeFilter) params.grade = gradeFilter;
+    const batchTrim = sanitizeBatchIdInput(batchIdFilter).trim();
+    if (batchTrim) params.batchId = batchTrim;
+    if (statusFilter) params.status = statusFilter;
+    const searchTrim = searchQuery.trim();
+    if (searchTrim) params.search = searchTrim;
+    Object.assign(params, resolveDateApiParams());
+    if (teacherIdFilter) params.teacherId = teacherIdFilter;
+    return params;
+  }, [
+    gradeFilter,
+    batchIdFilter,
+    statusFilter,
+    searchQuery,
+    resolveDateApiParams,
+    teacherIdFilter,
+  ]);
+
+  const exportLabel = useMemo(() => {
+    if (dateMode === "custom" && customFromYmd && customToYmd) {
+      return `${customFromYmd}-to-${customToYmd}`;
+    }
+    if (monthFilter && weekFilter) {
+      return `${monthFilter}-week-${weekFilter}`;
+    }
+    if (monthFilter) return monthFilter;
+    return "all";
+  }, [dateMode, customFromYmd, customToYmd, monthFilter, weekFilter]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { page, limit: PAGE_SIZE };
-      if (gradeFilter) params.grade = gradeFilter;
-      const batchTrim = sanitizeBatchIdInput(batchIdFilter).trim();
-      if (batchTrim) params.batchId = batchTrim;
-      if (statusFilter) params.status = statusFilter;
+      const params = { ...buildFilterParams(), page, limit: PAGE_SIZE };
       const { data } = await adminService.listBookings(params);
       const bundle = data.data;
       const items = Array.isArray(bundle?.items) ? bundle.items : [];
@@ -156,7 +238,32 @@ export const AllBookingsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [gradeFilter, batchIdFilter, statusFilter, page, pushToast]);
+  }, [buildFilterParams, page, pushToast]);
+
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    try {
+      const { data } = await adminService.listBookings(buildFilterParams());
+      const bundle = data.data;
+      const items = Array.isArray(bundle?.items) ? bundle.items : Array.isArray(bundle) ? bundle : [];
+      if (!items.length) {
+        pushToast({ title: "No bookings to export for current filters", variant: "warning" });
+        return;
+      }
+      downloadBookingsExcel(items, { label: exportLabel });
+      pushToast({
+        title: `Exported ${items.length} booking${items.length === 1 ? "" : "s"} to Excel`,
+        variant: "success",
+      });
+    } catch (error) {
+      pushToast({
+        title: error.response?.data?.message || "Could not export bookings",
+        variant: "error",
+      });
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -193,67 +300,188 @@ export const AllBookingsPage = () => {
         title="All bookings"
         description="Filter by learner grade, roster batch ID, or booking status. Recording and transcript links are fetched automatically and shown here when available."
       >
-        <Button
-          type="button"
-          variant="adminSecondary"
-          className="inline-flex items-center gap-2"
-          onClick={load}
-          disabled={loading}
-        >
-          <FiRefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="adminSecondary"
+            className="inline-flex items-center gap-2"
+            onClick={() => void handleExportExcel()}
+            disabled={loading || exportingExcel}
+          >
+            <FiDownload className={exportingExcel ? "h-4 w-4 animate-pulse" : "h-4 w-4"} />
+            {exportingExcel ? "Exporting…" : "Download Excel"}
+          </Button>
+          <Button
+            type="button"
+            variant="adminSecondary"
+            className="inline-flex items-center gap-2"
+            onClick={load}
+            disabled={loading}
+          >
+            <FiRefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+            Refresh
+          </Button>
+        </div>
       </AdminPageHero>
 
       <AdminPanel className="space-y-5">
-        <div className="flex flex-col gap-4 rounded-2xl border border-[#8BBCEB]/35 bg-[#F5F5F5] p-4 lg:flex-row lg:flex-wrap lg:items-end">
-          <label className="block min-w-[10rem] space-y-1">
-            <span className="text-sm font-semibold text-[#0B3C5D]">Filter by grade</span>
-            <select
-              className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
-              value={gradeFilter}
-              onChange={(e) => setGradeFilter(e.target.value)}
-            >
-              <option value="">All grades</option>
-              {GRADES.map((g) => (
-                <option key={g} value={g}>
-                  Grade {g}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="min-w-[12rem] flex-1 sm:max-w-xs">
-            <Input
-              tone="admin"
-              label="Filter by batch ID"
-              placeholder="e.g. B202401"
-              value={batchIdFilter}
-              maxLength={80}
-              onChange={(e) => {
-                const v = sanitizeBatchIdInput(e.target.value);
-                setBatchIdFilter(v);
-              }}
+        <div className="flex flex-col gap-4 rounded-2xl border border-[#8BBCEB]/35 bg-[#F5F5F5] p-4">
+          <div className="relative">
+            <FiSearch
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8BBCEB]"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search learner, teacher, email, batch, grade, status, or booking ID…"
+              className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] py-2.5 pl-10 pr-3 text-sm font-medium text-[#0B3C5D] outline-none transition placeholder:text-[#1E73D8]/40 focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+              aria-label="Search bookings"
             />
           </div>
-          <label className="block min-w-[12rem] space-y-1">
-            <span className="text-sm font-semibold text-[#0B3C5D]">Filter by status</span>
-            <select
-              className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="">All statuses</option>
-              {STATUS_FILTER_VALUES.map((s) => (
-                <option key={s} value={s}>
-                  {formatBookingStatusLabel(s)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="text-xs font-medium leading-relaxed text-[#1E73D8]/90 lg:max-w-md lg:flex-1 lg:pb-2">
-            Grade matches the <span className="font-bold text-[#0B3C5D]">student</span> (roster or account). Batch ID
-            applies to <span className="font-bold text-[#0B3C5D]">roster</span> bookings; student-app bookings have no
-            batch. Status filters the booking lifecycle outcome.
+
+          <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
+            <label className="block min-w-[10rem] space-y-1">
+              <span className="text-sm font-semibold text-[#0B3C5D]">Filter by grade</span>
+              <select
+                className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+                value={gradeFilter}
+                onChange={(e) => setGradeFilter(e.target.value)}
+              >
+                <option value="">All grades</option>
+                {GRADES.map((g) => (
+                  <option key={g} value={g}>
+                    Grade {g}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="min-w-[12rem] flex-1 sm:max-w-xs">
+              <Input
+                tone="admin"
+                label="Filter by batch ID"
+                placeholder="e.g. B202401"
+                value={batchIdFilter}
+                maxLength={80}
+                onChange={(e) => {
+                  const v = sanitizeBatchIdInput(e.target.value);
+                  setBatchIdFilter(v);
+                }}
+              />
+            </div>
+            <label className="block min-w-[12rem] space-y-1">
+              <span className="text-sm font-semibold text-[#0B3C5D]">Filter by status</span>
+              <select
+                className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="">All statuses</option>
+                {STATUS_FILTER_VALUES.map((s) => (
+                  <option key={s} value={s}>
+                    {formatBookingStatusLabel(s)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="rounded-xl border border-[#8BBCEB]/30 bg-[#FFFFFF] p-4">
+            <p className="text-sm font-semibold text-[#0B3C5D]">Filter by date (IST)</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setDateMode("month")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  dateMode === "month"
+                    ? "bg-[#1E73D8] text-[#FFFFFF] shadow-sm"
+                    : "border border-[#8BBCEB]/50 bg-[#F8FBFF] text-[#0B3C5D] hover:border-[#1E73D8]/50"
+                }`}
+              >
+                Month & week
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateMode("custom")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  dateMode === "custom"
+                    ? "bg-[#1E73D8] text-[#FFFFFF] shadow-sm"
+                    : "border border-[#8BBCEB]/50 bg-[#F8FBFF] text-[#0B3C5D] hover:border-[#1E73D8]/50"
+                }`}
+              >
+                Custom range
+              </button>
+            </div>
+
+            {dateMode === "month" ? (
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <label className="block min-w-[10rem] space-y-1">
+                  <span className="text-xs font-semibold text-[#1E73D8]">Month</span>
+                  <input
+                    type="month"
+                    value={monthFilter}
+                    onChange={(e) => setMonthFilter(e.target.value)}
+                    className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+                  />
+                </label>
+                <label className="block min-w-[12rem] flex-1 space-y-1 sm:max-w-sm">
+                  <span className="text-xs font-semibold text-[#1E73D8]">Week in month</span>
+                  <select
+                    value={weekFilter}
+                    onChange={(e) => setWeekFilter(e.target.value)}
+                    disabled={!monthFilter}
+                    className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35 disabled:opacity-50"
+                  >
+                    <option value="">Full month</option>
+                    {weeksInMonth.map((week) => (
+                      <option key={week.week} value={String(week.week)}>
+                        {formatWeekOptionLabel(week)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <label className="block min-w-[10rem] space-y-1">
+                  <span className="text-xs font-semibold text-[#1E73D8]">From</span>
+                  <input
+                    type="date"
+                    value={customFromYmd}
+                    onChange={(e) => setCustomFromYmd(e.target.value)}
+                    className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+                  />
+                </label>
+                <label className="block min-w-[10rem] space-y-1">
+                  <span className="text-xs font-semibold text-[#1E73D8]">To</span>
+                  <input
+                    type="date"
+                    value={customToYmd}
+                    onChange={(e) => setCustomToYmd(e.target.value)}
+                    className="w-full rounded-xl border border-[#8BBCEB]/50 bg-[#FFFFFF] px-3 py-2.5 text-sm font-medium text-[#0B3C5D] outline-none transition focus:border-[#1E73D8] focus:ring-2 focus:ring-[#8BBCEB]/35"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+
+          {teacherIdFilter ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-[#0B3C5D]">Mentor filter active</span>
+              <button
+                type="button"
+                onClick={() => setTeacherIdFilter("")}
+                className="rounded-lg border border-[#1E73D8]/40 bg-[#FFFFFF] px-3 py-1.5 text-xs font-semibold text-[#1E73D8] hover:bg-[#F8FBFF]"
+              >
+                Clear mentor filter
+              </button>
+            </div>
+          ) : null}
+
+          <p className="text-xs font-medium leading-relaxed text-[#1E73D8]/90">
+            Search matches learner, teacher, emails, batch, grade, status, and booking ID. Date filters use
+            session start time in <span className="font-bold text-[#0B3C5D]">Asia/Kolkata</span>.
           </p>
         </div>
 
@@ -267,15 +495,25 @@ export const AllBookingsPage = () => {
             title={
               gradeFilter ||
               sanitizeBatchIdInput(batchIdFilter).trim() ||
-              statusFilter
+              statusFilter ||
+              searchQuery.trim() ||
+              monthFilter ||
+              weekFilter ||
+              (customFromYmd && customToYmd) ||
+              teacherIdFilter
                 ? "No bookings match these filters"
                 : "No bookings yet"
             }
             description={
               gradeFilter ||
               sanitizeBatchIdInput(batchIdFilter).trim() ||
-              statusFilter
-                ? "Clear grade, batch ID, or status — data refreshes automatically when filters change."
+              statusFilter ||
+              searchQuery.trim() ||
+              monthFilter ||
+              weekFilter ||
+              (customFromYmd && customToYmd) ||
+              teacherIdFilter
+                ? "Try clearing or changing filters — data refreshes automatically when they change."
                 : "Bookings appear here after students or roster learners reserve available slots."
             }
           />

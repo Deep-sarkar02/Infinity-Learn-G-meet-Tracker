@@ -13,9 +13,12 @@ const {
   rosterBulkSchema,
   rosterStudentsQuerySchema,
   dashboardStatsQuerySchema,
+  slotStatsQuerySchema,
+  mentorSlotReportParamsSchema,
   adminBookingsQuerySchema,
   weekdayStatsQuerySchema,
   regenerateTeacherPasswordSchema,
+  viewTeacherPasswordSchema,
   updateBookingMediaParamsSchema,
   updateBookingMediaBodySchema,
 } = require("./admin.validation");
@@ -25,6 +28,11 @@ const router = express.Router();
 router.use(authMiddleware, permit("admin"));
 
 router.get("/teachers", asyncHandler(adminController.listTeachers));
+
+router.get(
+  "/teachers/today-slot-stats",
+  asyncHandler(adminController.getTeachersTodaySlotStats),
+);
 
 router.post(
   "/teachers",
@@ -50,6 +58,11 @@ router.post(
   "/teachers/:teacherId/regenerate-password",
   validate(regenerateTeacherPasswordSchema),
   asyncHandler(adminController.regenerateTeacherPassword),
+);
+router.post(
+  "/teachers/:teacherId/view-password",
+  validate(viewTeacherPasswordSchema),
+  asyncHandler(adminController.viewTeacherPassword),
 );
 router.patch(
   "/booking-window",
@@ -80,6 +93,19 @@ router.get(
   "/bookings/weekday-stats",
   validate(weekdayStatsQuerySchema, "query"),
   asyncHandler(adminController.getBookingWeekdayStats),
+);
+
+router.get(
+  "/bookings/slot-stats",
+  validate(slotStatsQuerySchema, "query"),
+  asyncHandler(adminController.getMentorSlotStats),
+);
+
+router.get(
+  "/bookings/slot-stats/:teacherId/report",
+  validate(mentorSlotReportParamsSchema, "params"),
+  validate(slotStatsQuerySchema, "query"),
+  asyncHandler(adminController.getMentorSlotReport),
 );
 
 router.get(

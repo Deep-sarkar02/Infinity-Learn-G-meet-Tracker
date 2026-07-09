@@ -7,7 +7,7 @@ const bookSlotSchema = Joi.object({
 });
 
 const teacherBookingHistoryQuerySchema = Joi.object({
-  window: Joi.string().valid("week", "month").optional().default("week"),
+  window: Joi.string().valid("week", "month", "all").optional().default("all"),
 });
 
 const teacherCompleteBookingParamsSchema = Joi.object({

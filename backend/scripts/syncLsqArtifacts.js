@@ -6,7 +6,7 @@
  *   node scripts/syncLsqArtifacts.js "https://meet.google.com/xxx-yyyy-zzz"
  */
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+require("dotenv").config({ path: require("../src/config/dotenvPath") });
 
 const getPrisma = require("../src/config/postgres");
 const { syncBookingById } = require("../src/modules/integrations/lsq/lsqArtifacts.sync");

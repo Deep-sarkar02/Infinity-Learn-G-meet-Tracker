@@ -1,9 +1,8 @@
-const path = require("path");
 const dotenv = require("dotenv");
+const dotenvPath = require("./dotenvPath");
 
-// Always load backend/.env (not cwd-relative). Starting Node from repo root or another folder
-// otherwise skips AWS/SES_* and the app reports SES not configured.
-dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+// Always load repo-root .env (not cwd-relative).
+dotenv.config({ path: dotenvPath });
 
 /** Env truthy for flags like LSQ_PROSPECT_ACTIVITY_CLIENT_DEBUG (handles BOM/case). */
 const envFlagTrue = (v) => {
@@ -40,9 +39,17 @@ const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT) || 5000,
   corsOrigins,
+  /** Swagger / OpenAPI docs at /api/v1/docs. Enabled by default; set SWAGGER_ENABLED=false to hide. */
+  docs: {
+    enabled: String(process.env.SWAGGER_ENABLED ?? "true").trim().toLowerCase() !== "false",
+    /** Optional HTTP Basic auth on the docs UI (both must be set to activate). */
+    basicAuthUser: (process.env.SWAGGER_USER || "").trim(),
+    basicAuthPassword: (process.env.SWAGGER_PASSWORD || "").trim(),
+  },
   databaseUrl: (process.env.DATABASE_URL || "").trim(),
   jwtSecret: process.env.JWT_SECRET || "unsafe-dev-secret",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "1d",
+  jwtRememberExpiresIn: process.env.JWT_REMEMBER_EXPIRES_IN || "10d",
   bookingWindowDays: Number(process.env.BOOKING_WINDOW_DAYS) || 7,
   /**
    * Teacher credential emails: Amazon SES v2 **SendEmail** + **Template** only (no Nodemailer/SMTP).

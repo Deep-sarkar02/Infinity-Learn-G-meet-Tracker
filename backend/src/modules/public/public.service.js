@@ -38,8 +38,10 @@ const getBookingWindow = async () => {
   return { bookingWindowDays };
 };
 
-const lookupStudent = async ({ mobile }) => {
-  const students = await rosterService.findByMobile(mobile);
+const lookupStudent = async ({ mobile, userId }) => {
+  const students = mobile
+    ? await rosterService.findByMobile(mobile)
+    : await rosterService.findByUserId(userId);
   return {
     mobile: students[0].mobile,
     students: students.map((student) => ({
@@ -50,6 +52,7 @@ const lookupStudent = async ({ mobile }) => {
       display: student.display,
       batchId: student.batchId,
       batchName: student.batchName,
+      userId: student.userId,
     })),
   };
 };

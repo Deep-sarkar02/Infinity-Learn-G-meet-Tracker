@@ -15,10 +15,10 @@ export const useAuthController = () => {
   const { pushToast } = useToast();
   const [loading, setLoading] = useState(false);
 
-  const login = async (payload, expectedRole) => {
+  const login = async (payload, expectedRole, rememberMe = false) => {
     setLoading(true);
     try {
-      const { data } = await authService.login(payload);
+      const { data } = await authService.login({ ...payload, rememberMe });
       const loggedInRole = data.data.user.role;
       if (expectedRole && expectedRole !== loggedInRole) {
         pushToast({
@@ -27,7 +27,7 @@ export const useAuthController = () => {
         });
         return;
       }
-      setSession(data.data);
+      setSession(data.data, rememberMe);
       pushToast({ title: "Login successful" });
       navigate(routeByRole[loggedInRole] || "/");
     } catch (error) {

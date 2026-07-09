@@ -1,13 +1,14 @@
 /**
- * Writes .secrets/google-service-account.json into backend/.env as GOOGLE_SERVICE_ACCOUNT_JSON
+ * Writes .secrets/google-service-account.json into repo-root .env as GOOGLE_SERVICE_ACCOUNT_JSON
  * and clears GOOGLE_SERVICE_ACCOUNT_KEY_PATH. Run from backend/: npm run env:patch-google-into-dotenv
  */
 const fs = require("fs");
 const path = require("path");
+const dotenvPath = require("../src/config/dotenvPath");
 
 const backendRoot = path.join(__dirname, "..");
 const keyPath = path.join(backendRoot, ".secrets", "google-service-account.json");
-const envPath = path.join(backendRoot, ".env");
+const envPath = dotenvPath;
 
 const oneLine = JSON.stringify(JSON.parse(fs.readFileSync(keyPath, "utf8")));
 const quoted = `GOOGLE_SERVICE_ACCOUNT_JSON='${oneLine.replace(/'/g, "''")}'`;

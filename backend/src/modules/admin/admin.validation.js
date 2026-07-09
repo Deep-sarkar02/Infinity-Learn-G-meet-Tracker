@@ -105,6 +105,7 @@ const rosterBulkSchema = Joi.object({
 const rosterStudentsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).max(10_000).optional().default(1),
   limit: Joi.number().integer().min(1).max(100).optional().default(10),
+  search: Joi.string().trim().max(120).optional().allow(""),
   grade: Joi.string()
     .trim()
     .pattern(/^(12|11|10|[1-9])$/)
@@ -144,6 +145,15 @@ const weekdayStatsQuerySchema = Joi.object({
   month: monthYyyyMmSchema,
 });
 
+const slotStatsQuerySchema = Joi.object({
+  month: monthYyyyMmSchema,
+  week: Joi.number().integer().min(1).max(6).optional(),
+});
+
+const mentorSlotReportParamsSchema = Joi.object({
+  teacherId: objectIdString,
+});
+
 const adminBookingsQuerySchema = Joi.object({
   grade: Joi.string()
     .trim()
@@ -165,6 +175,18 @@ const adminBookingsQuerySchema = Joi.object({
   /** Page size when `page` is set. Max 500. */
   limit: Joi.number().integer().min(1).max(500).optional(),
   month: monthYyyyMmSchema,
+  fromYmd: Joi.string()
+    .trim()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .allow(""),
+  toYmd: Joi.string()
+    .trim()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .allow(""),
+  teacherId: Joi.string().trim().max(80).optional().allow(""),
+  search: Joi.string().trim().max(120).optional().allow(""),
   status: Joi.string()
     .valid(
       "scheduled",
@@ -179,6 +201,10 @@ const adminBookingsQuerySchema = Joi.object({
 
 const regenerateTeacherPasswordSchema = Joi.object({
   sendEmail: Joi.boolean().optional().default(true),
+});
+
+const viewTeacherPasswordSchema = Joi.object({
+  adminPassword: Joi.string().required(),
 });
 
 const updateBookingMediaParamsSchema = Joi.object({
@@ -203,9 +229,12 @@ module.exports = {
   rosterBulkSchema,
   rosterStudentsQuerySchema,
   dashboardStatsQuerySchema,
+  slotStatsQuerySchema,
+  mentorSlotReportParamsSchema,
   adminBookingsQuerySchema,
   weekdayStatsQuerySchema,
   regenerateTeacherPasswordSchema,
+  viewTeacherPasswordSchema,
   updateBookingMediaParamsSchema,
   updateBookingMediaBodySchema,
 };

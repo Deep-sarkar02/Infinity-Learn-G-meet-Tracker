@@ -6,6 +6,41 @@ const { idOrLegacyWhere } = require("../../utils/id");
 const toNameLower = (name) => name.trim().toLowerCase();
 const prisma = process.env.DATABASE_URL ? getPrisma() : null;
 
+const rosterIdentityWhere = (doc) => ({
+  userId: doc.userId,
+  mobile: doc.mobile,
+  grade: doc.grade,
+  display: doc.display,
+  batchId: doc.batchId,
+  batchName: doc.batchName,
+});
+
+const skipPayload = (doc) => ({
+  userId: doc.userId,
+  mobile: doc.mobile,
+  name: doc.name,
+  grade: doc.grade,
+  display: doc.display,
+  batchId: doc.batchId,
+  batchName: doc.batchName,
+});
+
+/** Duplicate if same mobile+name, or same userId+phone+grade+display+batchId+batchName. */
+const findDuplicateRosterStudent = async (doc) => {
+  const byMobileName = await prisma.rosterStudent.findUnique({
+    where: {
+      mobile_nameLower: {
+        mobile: doc.mobile,
+        nameLower: doc.nameLower,
+      },
+    },
+  });
+  if (byMobileName) return byMobileName;
+  return prisma.rosterStudent.findFirst({
+    where: rosterIdentityWhere(doc),
+  });
+};
+
 const toRosterShape = (row) => ({
   _id: row.legacyMongoId || row.id,
   id: row.id,
@@ -44,16 +79,9 @@ const createMany = async (students) => {
       batchName: String(row.batchName).trim(),
     };
     try {
-      const existing = await prisma.rosterStudent.findUnique({
-        where: {
-          mobile_nameLower: {
-            mobile: doc.mobile,
-            nameLower: doc.nameLower,
-          },
-        },
-      });
+      const existing = await findDuplicateRosterStudent(doc);
       if (existing) {
-        skipped.push({ mobile: doc.mobile, name: doc.name });
+        skipped.push(skipPayload(doc));
       } else {
         const pg = await prisma.rosterStudent.create({
           data: {
@@ -70,7 +98,11 @@ const createMany = async (students) => {
         created.push(toRosterShape(pg));
       }
     } catch (error) {
-      throw error;
+      if (error?.code === "P2002") {
+        skipped.push(skipPayload(doc));
+      } else {
+        throw error;
+      }
     }
   }
   return { created, skipped };
@@ -97,11 +129,24 @@ const listForAdmin = async (query = {}) => {
   if (query.display) {
     filters.display = String(query.display).trim();
   }
+  const searchTrim =
+    query.search !== undefined && query.search !== null && String(query.search).trim() !== ""
+      ? String(query.search).trim()
+      : "";
 
   const skip = (safePage - 1) * safeLimit;
   const where = {};
   if (filters.grade) where.grade = filters.grade;
   if (filters.display) where.display = filters.display;
+  if (searchTrim) {
+    where.OR = [
+      { name: { contains: searchTrim, mode: "insensitive" } },
+      { userId: { contains: searchTrim, mode: "insensitive" } },
+      { mobile: { contains: searchTrim, mode: "insensitive" } },
+      { batchId: { contains: searchTrim, mode: "insensitive" } },
+      { batchName: { contains: searchTrim, mode: "insensitive" } },
+    ];
+  }
   if (!prisma) {
     throw new ApiError(500, "Postgres is not configured");
   }
@@ -169,6 +214,24 @@ const findByMobile = async (mobile) => {
   return students.map(toRosterShape);
 };
 
+const findByUserId = async (userId) => {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    throw new ApiError(400, "User ID is required");
+  }
+  if (!prisma) {
+    throw new ApiError(500, "Postgres is not configured");
+  }
+  const students = await prisma.rosterStudent.findMany({
+    where: { userId: normalizedUserId },
+    orderBy: [{ name: "asc" }, { batchName: "asc" }, { grade: "asc" }],
+  });
+  if (!students.length) {
+    throw new ApiError(404, "No student found for this ID");
+  }
+  return students.map(toRosterShape);
+};
+
 const findById = async (id) => {
   if (!prisma) {
     throw new ApiError(500, "Postgres is not configured");
@@ -204,6 +267,7 @@ module.exports = {
   listForAdmin,
   findByMobileAndName,
   findByMobile,
+  findByUserId,
   findById,
   verifyMobile,
   normalizeMobile,
